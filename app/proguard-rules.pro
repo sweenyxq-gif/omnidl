@@ -1,0 +1,5 @@
+-keep class * extends androidx.room.RoomDatabase
+-keep @dagger.hilt.android.HiltAndroidApp class * { *; }
+-dontwarn org.conscrypt.**
+-keep class com.frostwire.jlibtorrent.swig.libtorrent_jni { *; }
+-keep class com.frostwire.jlibtorrent.** { *; }

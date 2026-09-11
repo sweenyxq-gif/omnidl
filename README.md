@@ -1,0 +1,94 @@
+# Omni Downloader
+
+Omni Downloader is an Android 10+ download manager built with Kotlin and Jetpack Compose. The current `0.2.0` milestone provides restart-safe HTTP/HTTPS downloads plus a native libtorrent-backed BitTorrent engine.
+
+## Features
+
+- HTTP/HTTPS metadata inspection and filename/MIME detection
+- Up to 16 concurrent HTTP Range segments (8 by default), with automatic single-stream fallback
+- Pause, resume, cancel, retry with bounded exponential backoff, and crash-safe segment state
+- Streaming I/O, `Long` offsets, optional SHA-256 validation, and temporary SAF documents to protect final files
+- Unified priority queue with three concurrent tasks by default
+- Room-backed state/history and reboot/process recovery
+- Foreground data-sync service, grouped persistent progress notification, and pause/cancel actions
+- Storage Access Framework destinations; no broad storage permission
+- Per-request headers, Cookie, User-Agent, Referer, Wi-Fi-only rule, share target, light/dark/system theme, and Material You colors
+- TLS verification and cleartext blocking by default
+- Magnet links and `.torrent` files through libtorrent, with DHT/peer discovery, progress, pause/resume/cancel, and multi-file SAF export
+- Swipeable download status pages, queue search, status counts, and safer task deletion
+
+## Screenshots
+
+> Screenshots will be added after the first signed device build.
+
+| Downloads | Add download | Settings |
+|---|---|---|
+| _Placeholder_ | _Placeholder_ | _Placeholder_ |
+
+## Architecture
+
+The project follows Clean Architecture/MVVM boundaries in one Gradle application module while the API settles. See [Architecture](docs/ARCHITECTURE.md).
+
+```text
+Compose UI → ViewModel → Repository / Queue → Engine router → HTTP engine
+                         ↓                         ↓
+                       Room              disk segments → SAF
+```
+
+Core packages mirror future module boundaries: `presentation`, `domain`, `data`, `download`, `service`, and `di`.
+
+## Build
+
+Requirements: JDK 17 and Android SDK Platform 35.
+
+```powershell
+.\gradlew.bat testDebugUnitTest
+.\gradlew.bat assembleDebug
+```
+
+The debug APK is emitted at `app/build/outputs/apk/debug/app-debug.apk`. Open the root directory in Android Studio for device execution. Select a destination directory through the system folder picker before starting a transfer.
+
+## Supported Android versions
+
+- Minimum: Android 10 / API 29
+- Target and compile SDK: API 35
+
+Foreground-service and notification behavior uses the modern data-sync service type and Android 13+ notification permission. Reboot recovery is a bounded WorkManager task; indefinite transfers run only in a foreground service.
+
+## Download engines
+
+| Engine | Status |
+|---|---|
+| Direct HTTP/HTTPS | Enabled in Phase 1 |
+| Torrent / magnet | Enabled in Phase 2 |
+| Non-DRM HLS / DASH | Phase 3, disabled |
+| Provider resolvers, browser, FTP/SFTP, proxy | Phase 4, disabled |
+
+## Security considerations
+
+Only download material you are authorized to access. Omni Downloader does not bypass DRM, authentication, payments, or access controls. TLS certificate checks are never disabled; cleartext HTTP is denied by default. Remote filenames are sanitized, secrets are excluded from logs, destination access is restricted to user-granted SAF trees, and incomplete output is not exposed under its final filename.
+
+Cookies and authorization headers are currently stored in the private Room database so interrupted transfers can resume. Device backup excludes that database. A future release should add Android Keystore-backed field encryption before a production store release.
+
+## Known limitations
+
+- Servers without Range support resume by safely restarting the single stream from byte zero.
+- Some document providers do not support rename; finalization then fails without exposing a corrupt completed file.
+- Per-task real-time speed is calculated by the engine but the first UI milestone displays persisted byte progress only.
+- Torrent file-priority selection, category-specific directories, drag gestures for priority, global throttling, proxies, browser interception, provider-specific resolvers, and protocol engines after BitTorrent are not implemented yet.
+- No destructive Room fallback is configured. Schema migrations must be supplied when version 2 is introduced.
+
+## Roadmap
+
+1. Phase 1: robust direct HTTP engine and Android lifecycle integration (this milestone)
+2. Phase 2: Android-compatible libtorrent binding, magnet/`.torrent` intake, resume-safe payloads, and torrent UI (current; per-file priorities remain)
+3. Phase 3: Media3-backed offline non-DRM HLS/DASH with track selection
+4. Phase 4: public provider resolvers, lightweight browser, FTP/SFTP, proxy refinements, category folders, and advanced scheduling
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please do not propose access-control or DRM bypass features.
+
+## License
+
+See [LICENSE](LICENSE). The license text is intentionally a placeholder until the project owner selects one.
