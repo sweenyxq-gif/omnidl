@@ -12,6 +12,7 @@ import com.omnidownloader.domain.userscript.UserscriptMetadata
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import org.json.JSONObject
+import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,6 +40,9 @@ class AndroidUserscriptEngine @Inject constructor(
         val networkCalls = mutableListOf<ScriptNetworkLog>()
         val resolvedItems = mutableListOf<ResolvedItem>()
         val completionDeferred = CompletableDeferred<Unit>()
+        val addLog: (String) -> Unit = { message ->
+            if (logs.size < 200) logs.add(message.take(2_000))
+        }
 
         var webView: WebView? = null
         try {
@@ -46,14 +50,17 @@ class AndroidUserscriptEngine @Inject constructor(
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
-                settings.databaseEnabled = false
                 settings.domStorageEnabled = false
+                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+                settings.blockNetworkLoads = true
+                settings.loadsImagesAutomatically = false
+                setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, true)
             }
 
             val bridge = object {
                 @JavascriptInterface
                 fun log(message: String) {
-                    logs.add(message)
+                    addLog(message)
                 }
 
                 @JavascriptInterface
@@ -61,6 +68,15 @@ class AndroidUserscriptEngine @Inject constructor(
                     try {
                         val json = JSONObject(jsonStr)
                         val url = json.optString("url").takeIf { it.isNotBlank() } ?: return
+                        if (resolvedItems.size >= 50) {
+                            addLog("Ignored extra result: scripts may return at most 50 links")
+                            return
+                        }
+                        val scheme = runCatching { URI(url).scheme?.lowercase() }.getOrNull()
+                        if (scheme !in setOf("http", "https", "magnet", "ftp", "sftp")) {
+                            addLog("Blocked unsupported resolved URL scheme: ${scheme ?: "missing"}")
+                            return
+                        }
                         val label = json.optString("label").takeIf { it.isNotBlank() } ?: metadata.name
                         val filename = json.optString("filename").takeIf { it.isNotBlank() }
                         val mimeType = json.optString("mimeType").takeIf { it.isNotBlank() }
@@ -80,7 +96,7 @@ class AndroidUserscriptEngine @Inject constructor(
                         val headers = mutableMapOf<String, String>()
                         json.optJSONObject("headers")?.let { h ->
                             val keys = h.keys()
-                            while (keys.hasNext()) {
+                            while (keys.hasNext() && headers.size < 32) {
                                 val k = keys.next()
                                 headers[k] = h.getString(k)
                             }
@@ -100,33 +116,41 @@ class AndroidUserscriptEngine @Inject constructor(
                         )
                         completionDeferred.complete(Unit)
                     } catch (e: Exception) {
-                        logs.add("Error parsing resolve payload: ${e.message}")
+                        addLog("Error parsing resolve payload: ${e.message}")
                     }
                 }
 
                 @JavascriptInterface
                 fun getValue(key: String, def: String): String {
+                    if ("GM_getValue" !in metadata.grants) return def
                     return storage.getValue(metadata.id, key, def) ?: def
                 }
 
                 @JavascriptInterface
                 fun setValue(key: String, value: String) {
+                    if ("GM_setValue" !in metadata.grants) return
                     storage.setValue(metadata.id, key, value)
                 }
 
                 @JavascriptInterface
                 fun deleteValue(key: String) {
+                    if ("GM_deleteValue" !in metadata.grants) return
                     storage.deleteValue(metadata.id, key)
                 }
 
                 @JavascriptInterface
                 fun listValuesJson(): String {
+                    if ("GM_listValues" !in metadata.grants) return "[]"
                     val list = storage.listValues(metadata.id)
                     return org.json.JSONArray(list).toString()
                 }
 
                 @JavascriptInterface
+                @Suppress("UNUSED_PARAMETER")
                 fun safeHttpCall(id: String, method: String, url: String, headersJson: String, body: String?): String {
+                    if ("GM_xmlhttpRequest" !in metadata.grants) {
+                        return JSONObject().put("error", "Network access requires @grant GM_xmlhttpRequest").toString()
+                    }
                     val headersMap = mutableMapOf<String, String>()
                     try {
                         val h = JSONObject(headersJson)
@@ -203,10 +227,39 @@ class AndroidUserscriptEngine @Inject constructor(
                     };
 
                     window.GM_log = window.omni.log;
+                    window.unsafeWindow = window;
                     window.GM_getValue = function(k, d) { return _OmniNative.getValue(k, d || ""); };
                     window.GM_setValue = function(k, v) { _OmniNative.setValue(k, String(v)); };
                     window.GM_deleteValue = function(k) { _OmniNative.deleteValue(k); };
                     window.GM_listValues = function() { return JSON.parse(_OmniNative.listValuesJson()); };
+                    window.GM_addStyle = function(css) {
+                        try {
+                            var style = document.createElement('style');
+                            style.textContent = css;
+                            (document.head || document.documentElement || document.body).appendChild(style);
+                        } catch(e) {}
+                    };
+                    window.GM_openInTab = function(url, options) {
+                        window.omni.log("GM_openInTab: " + url);
+                        if (typeof url === 'string' && (url.indexOf('http') === 0 || url.indexOf('magnet:') === 0)) {
+                            window.omni.resolve({ url: url, label: "Resolved Stream Link", type: "HTTP" });
+                        }
+                    };
+                    window.GM = window.GM || {};
+                    window.GM.openInTab = window.GM_openInTab;
+                    window.GM_download = function(options, filename) {
+                        var target = typeof options === 'string' ? { url: options, name: filename } : options;
+                        window.omni.resolve({
+                            url: target.url,
+                            filename: target.name || filename,
+                            label: target.name || "Downloaded Media",
+                            type: "HTTP"
+                        });
+                    };
+                    window.GM_setClipboard = function(text) {};
+                    window.GM_notification = function(details) { window.omni.log(typeof details === 'string' ? details : (details.text || "")); };
+                    window.GM_registerMenuCommand = function() {};
+                    window.GM_info = { script: { version: "1.0", name: "Userscript" } };
                     window.GM_xmlhttpRequest = function(details) {
                         try {
                             var method = details.method || 'GET';
@@ -236,7 +289,7 @@ class AndroidUserscriptEngine @Inject constructor(
                 $polyfill
                 (async function() {
                     try {
-                        var targetUrl = "${targetUrl.replace("\"", "\\\"")}";
+                        var targetUrl = ${JSONObject.quote(targetUrl)};
                         ${metadata.rawScript}
                     } catch (err) {
                         omni.log("Runtime Exception: " + err.message);

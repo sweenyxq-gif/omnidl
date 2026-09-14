@@ -9,6 +9,8 @@ import com.frostwire.jlibtorrent.swig.torrent_flags_t
 import com.omnidownloader.data.database.DownloadDao
 import com.omnidownloader.data.database.DownloadHistoryEntity
 import com.omnidownloader.data.storage.SafStorage
+import com.omnidownloader.data.repository.SettingsRepository
+import com.omnidownloader.download.core.PerformancePolicy
 import com.omnidownloader.domain.engine.DownloadEngine
 import com.omnidownloader.domain.model.*
 import com.omnidownloader.domain.repository.DownloadRepository
@@ -16,6 +18,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -23,6 +26,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.omnidownloader.service.PowerStateMonitor
 
 @Singleton
 class TorrentDownloadEngine @Inject constructor(
@@ -31,6 +35,8 @@ class TorrentDownloadEngine @Inject constructor(
     private val repository: DownloadRepository,
     private val dao: DownloadDao,
     private val storage: SafStorage,
+    private val settingsRepository: SettingsRepository,
+    private val powerStateMonitor: PowerStateMonitor,
 ) : DownloadEngine {
     private val jobs = ConcurrentHashMap<String, Job>()
     private val handles = ConcurrentHashMap<String, TorrentHandle>()
@@ -49,6 +55,8 @@ class TorrentDownloadEngine @Inject constructor(
         managers[task.id] = manager
         actions.remove(task.id)
         try {
+            val preferences = settingsRepository.settings.first()
+            val pollInterval = PerformancePolicy.torrentPollIntervalMs(preferences.ecoMode, powerStateMonitor.isPowerSaveMode())
             repository.setStatus(task.id, DownloadStatus.RESOLVING)
             manager.start()
             when (val source = task.source) {
@@ -64,7 +72,8 @@ class TorrentDownloadEngine @Inject constructor(
                 val total = status.totalWanted().takeIf { it > 0 } ?: -1
                 val done = status.totalWantedDone()
                 val speed = status.downloadRate().toLong().coerceAtLeast(0)
-                repository.updateProgress(task.id, done, total)
+                val eta = if (speed > 0 && total > done) (total - done) / speed else null
+                repository.updateProgress(task.id, done, total, speed, eta)
                 progress.getOrPut(task.id) { MutableStateFlow(DownloadProgress(task.id, 0, -1, status = DownloadStatus.DOWNLOADING)) }.value =
                     DownloadProgress(task.id, done, total, speed, if (speed > 0 && total > done) (total - done) / speed else null, DownloadStatus.DOWNLOADING)
                 if (status.isFinished()) {
@@ -73,11 +82,12 @@ class TorrentDownloadEngine @Inject constructor(
                     val uri = storage.exportPayload(task.destinationTreeUri, payload, outputName)
                     repository.setStatus(task.id, DownloadStatus.COMPLETED)
                     dao.insertHistory(DownloadHistoryEntity(taskId = task.id, fileName = task.fileName, destinationUri = uri.toString(), totalBytes = total, completedAt = System.currentTimeMillis()))
+                    repository.updateProgress(task.id, done, total, 0, null)
                     progress[task.id]?.value = DownloadProgress(task.id, done, total, status = DownloadStatus.COMPLETED)
                     staging.deleteRecursively()
                     break
                 }
-                delay(750)
+                delay(pollInterval)
             }
         } catch (cancelled: CancellationException) {
             val next = actions.remove(task.id) ?: DownloadStatus.PAUSED
@@ -90,7 +100,9 @@ class TorrentDownloadEngine @Inject constructor(
             handles.remove(task.id)
             managers.remove(task.id)
             runCatching { manager.stop() }
+            File(context.cacheDir, "${task.id}.torrent").delete()
             jobs.remove(task.id, job)
+            progress.remove(task.id)
         }
     }
 
@@ -106,6 +118,7 @@ class TorrentDownloadEngine @Inject constructor(
         actions[id] = DownloadStatus.CANCELLED
         jobs[id]?.cancelAndJoin()
         repository.setStatus(id, DownloadStatus.CANCELLED)
+        progress.remove(id)
         File(context.noBackupFilesDir, "torrents/$id").deleteRecursively()
     }
 

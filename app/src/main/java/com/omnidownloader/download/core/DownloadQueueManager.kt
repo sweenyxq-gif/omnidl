@@ -4,6 +4,7 @@ import com.omnidownloader.data.repository.SettingsRepository
 import com.omnidownloader.domain.model.DownloadStatus
 import com.omnidownloader.domain.repository.DownloadRepository
 import com.omnidownloader.service.ConnectivityMonitor
+import com.omnidownloader.service.PowerStateMonitor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -17,22 +18,25 @@ class DownloadQueueManager @Inject constructor(
     private val router: DownloadEngineRouter,
     settings: SettingsRepository,
     connectivity: ConnectivityMonitor,
+    power: PowerStateMonitor,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val active = mutableMapOf<String, Job>()
 
     init {
         scope.launch {
-            combine(repository.observeAll(), settings.settings, connectivity.state) { tasks, prefs, network -> Triple(tasks, prefs, network) }
-                .distinctUntilChanged().collect { (tasks, prefs, network) ->
+            combine(repository.observeAll(), settings.settings, connectivity.state, power.powerSaveMode) { tasks, prefs, network, savingPower ->
+                QueueInputs(tasks, prefs, network, savingPower)
+            }.distinctUntilChanged().collect { (tasks, prefs, network, savingPower) ->
                     synchronized(active) { active.entries.removeAll { it.value.isCompleted } }
                     if (!network.connected) {
                         tasks.filter { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RESOLVING }.forEach { pause(it.id) }
                         return@collect
                     }
-                    val slots = prefs.maxConcurrent - synchronized(active) { active.size }
+                    val maxConcurrent = PerformancePolicy.maxConcurrent(prefs.maxConcurrent, prefs.ecoMode, savingPower)
+                    val slots = maxConcurrent - synchronized(active) { active.size }
                     if (slots <= 0) return@collect
-                    QueueScheduler.next(tasks, synchronized(active) { active.size }, prefs.maxConcurrent, network.wifi, prefs.wifiOnly).forEach { task ->
+                    QueueScheduler.next(tasks, synchronized(active) { active.size }, maxConcurrent, network.wifi, prefs.wifiOnly).forEach { task ->
                             val engine = router.engineFor(task.source)
                             if (engine == null) scope.launch { repository.setStatus(task.id, DownloadStatus.FAILED, "UNSUPPORTED_SOURCE", "This engine is planned for a later phase") }
                             else synchronized(active) {
@@ -50,4 +54,11 @@ class DownloadQueueManager @Inject constructor(
     fun delete(id: String) { scope.launch { repository.get(id)?.let { router.engineFor(it.source)?.cancel(id) }; repository.delete(id) } }
     fun pauseAll() { scope.launch { repository.observeAll().first().filter { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RESOLVING }.forEach { router.engineFor(it.source)?.pause(it.id) } } }
     fun resumeAll() { scope.launch { repository.observeAll().first().filter { it.status == DownloadStatus.PAUSED || it.status == DownloadStatus.FAILED }.forEach { repository.setStatus(it.id, DownloadStatus.WAITING) } } }
+
+    private data class QueueInputs(
+        val tasks: List<com.omnidownloader.domain.model.DownloadTask>,
+        val settings: com.omnidownloader.data.repository.AppSettings,
+        val network: com.omnidownloader.service.ConnectivityState,
+        val powerSaveMode: Boolean,
+    )
 }

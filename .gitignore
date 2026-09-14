@@ -10,3 +10,9 @@ captures/
 keystore.properties
 *.jks
 .wrappergen/
+omnidl-extensions/
+website/
+__pycache__/
+*.pyc
+*.omni
+

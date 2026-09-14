@@ -10,7 +10,8 @@ interface DownloadRepository {
     suspend fun get(id: String): DownloadTask?
     suspend fun upsert(task: DownloadTask)
     suspend fun setStatus(id: String, status: DownloadStatus, errorCode: String? = null, errorMessage: String? = null)
-    suspend fun updateProgress(id: String, downloaded: Long, total: Long)
+    suspend fun updateProgress(id: String, downloaded: Long, total: Long, speed: Long = 0, eta: Long? = null)
+    suspend fun updateRemoteMetadata(id: String, resolvedUrl: String, etag: String?, lastModified: String?)
     suspend fun delete(id: String)
     suspend fun recoverInterrupted(autoResume: Boolean)
     suspend fun clearCompleted()

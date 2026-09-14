@@ -1,0 +1,352 @@
+{
+  "name": "OmniDownloader Extension Repository",
+  "version": "1.0.0",
+  "description": "Official and community-curated resolver extensions for OmniDownloader",
+  "homepage": "https://github.com/sweenyxq-gif/omnidl-extensions",
+  "totalExtensions": 15,
+  "extensions": [
+    {
+      "id": "https://omni.downloader/resolvers/1fichier:1Fichier Direct Resolver",
+      "name": "1Fichier Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/1fichier",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download links from 1Fichier file pages.",
+      "filename": "1fichier.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/1fichier.user.js",
+      "matches": [
+        "https://1fichier.com/?*"
+      ],
+      "includes": [],
+      "connects": [
+        "1fichier.com"
+      ]
+    },
+    {
+      "id": "AllInOneDownloader_Daniel:All-in-One Video Downloader – HD (YouTube, TikTok, Instagram, X & More)",
+      "name": "All-in-One Video Downloader – HD (YouTube, TikTok, Instagram, X & More)",
+      "namespace": "AllInOneDownloader_Daniel",
+      "version": "1.0.17",
+      "category": "general",
+      "author": "Daniel",
+      "description": "An all-in-one, fast, and free HD video downloader. Supports video downloads from YouTube, TikTok, Douyin, Instagram, Threads, XiaoHongShu, TED, Facebook, X (formerly Twitter), and more. Enjoy seamless, high-quality downloads with no watermarks.",
+      "filename": "all-in-one-video-downloader.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/all-in-one-video-downloader.user.js",
+      "matches": [],
+      "includes": [
+        "https://www.ted.com/*",
+        "https://*.youtube.com/*",
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.threads.com/*",
+        "https://www.instagram.com/*",
+        "https://www.tikTok.com/*",
+        "https://www.douyin.com/*",
+        "https://www.xiaohongshu.com/*",
+        "https://www.facebook.com/*",
+        "https://www.snapchat.com/*",
+        "https://www.pinterest.com/*",
+        "https://*.googlevideo.com/*",
+        "https://*.tiktokcdn.com/*",
+        "https://*.douyinvod.com/*",
+        "https://*.fbcdn.net/*",
+        "https://video.twimg.com/*",
+        "https://*.zjcdn.com/*",
+        "https://*.snssdk.com/*",
+        "https://*.tiktokv.com/*",
+        "https://*.douyinstatic.com/*",
+        "https://*.xhscdn.com/*",
+        "https://*.amemv.com/*",
+        "https://*.tikwm.com/*",
+        "https://*.tiktokcdn-eu.com/*",
+        "https://*.tiktokcdn-us.com/*",
+        "https://*.douyinpic.com/*",
+        "https://*.douyinmusicpromotion.com/*",
+        "https://*.cdninstagram.com/*",
+        "https://*.licdn.com/*",
+        "https://*.sc-cdn.net/*",
+        "https://*.pinimg.com/*",
+        "https://open.spotify.com/*",
+        "https://*.ted.com/*",
+        "https://*.tedcdn.com/*",
+        "https://*.dmcdn.net/*",
+        "https://*.tumblr.com/*",
+        "https://*.rutube.ru/*",
+        "https://*.uma.media/*"
+      ],
+      "connects": [
+        "googlevideo.com",
+        "tiktokcdn.com",
+        "snssdk.com",
+        "douyinvod.com",
+        "tiktokv.com",
+        "fbcdn.net",
+        "zjcdn.com",
+        "twimg.com",
+        "douyinstatic.com",
+        "xhscdn.com",
+        "amemv.com",
+        "tikwm.com",
+        "tiktokcdn-eu.com",
+        "tiktokcdn-us.com",
+        "douyinpic.com",
+        "douyinmusicpromotion.com",
+        "cdninstagram.com",
+        "ted.com",
+        "licdn.com",
+        "sc-cdn.net",
+        "pinimg.com",
+        "tedcdn.com",
+        "dmcdn.net",
+        "tumblr.com",
+        "rutube.ru",
+        "uma.media"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/buzzheavier:Buzzheavier Direct Resolver",
+      "name": "Buzzheavier Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/buzzheavier",
+      "version": "1.0.1",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct high-speed download links from Buzzheavier file shares.",
+      "filename": "buzzheavier.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/buzzheavier.user.js",
+      "matches": [
+        "https://buzzheavier.com/*"
+      ],
+      "includes": [],
+      "connects": [
+        "buzzheavier.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/civitai:Civitai AI Model Direct Resolver",
+      "name": "Civitai AI Model Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/civitai",
+      "version": "1.0.0",
+      "category": "ai-models",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download URLs for Checkpoints, LoRAs, VAEs, and Safetensors from Civitai model pages.",
+      "filename": "civitai.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/civitai.user.js",
+      "matches": [
+        "https://civitai.com/models/*"
+      ],
+      "includes": [],
+      "connects": [
+        "civitai.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/fileaxa:FileAxa Direct Resolver",
+      "name": "FileAxa Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/fileaxa",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct high-speed links from FileAxa download pages.",
+      "filename": "fileaxa.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/fileaxa.user.js",
+      "matches": [
+        "https://*.fileaxa.com/*",
+        "https://fileaxa.com/*"
+      ],
+      "includes": [],
+      "connects": [
+        "fileaxa.com",
+        "*.fileaxa.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/github:GitHub Release Assets Resolver",
+      "name": "GitHub Release Assets Resolver",
+      "namespace": "https://omni.downloader/resolvers/github",
+      "version": "1.1.0",
+      "category": "development",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download links for software release binaries, APKs, and archives on GitHub.",
+      "filename": "github-releases.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/github-releases.user.js",
+      "matches": [
+        "https://github.com/*/*/releases*"
+      ],
+      "includes": [],
+      "connects": [
+        "github.com",
+        "api.github.com",
+        "objects.githubusercontent.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/gitlab:GitLab Release Assets Resolver",
+      "name": "GitLab Release Assets Resolver",
+      "namespace": "https://omni.downloader/resolvers/gitlab",
+      "version": "1.0.0",
+      "category": "development",
+      "author": "OmniDownloader Community",
+      "description": "Finds and resolves downloadable release assets published on GitLab repository release pages.",
+      "filename": "gitlab-releases.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/gitlab-releases.user.js",
+      "matches": [
+        "https://gitlab.com/*/-/releases/*"
+      ],
+      "includes": [],
+      "connects": [
+        "gitlab.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/gofile:Gofile Direct Stream Resolver",
+      "name": "Gofile Direct Stream Resolver",
+      "namespace": "https://omni.downloader/resolvers/gofile",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download links for files stored on Gofile.io.",
+      "filename": "gofile.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/gofile.user.js",
+      "matches": [
+        "https://gofile.io/d/*"
+      ],
+      "includes": [],
+      "connects": [
+        "gofile.io",
+        "api.gofile.io"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/huggingface:Hugging Face Model & Dataset Resolver",
+      "name": "Hugging Face Model & Dataset Resolver",
+      "namespace": "https://omni.downloader/resolvers/huggingface",
+      "version": "1.0.0",
+      "category": "ai-models",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download links for AI models, weights (.safetensors, .gguf, .bin), and datasets on Hugging Face.",
+      "filename": "huggingface.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/huggingface.user.js",
+      "matches": [
+        "https://huggingface.co/*"
+      ],
+      "includes": [],
+      "connects": [
+        "huggingface.co",
+        "cdn-lfs.huggingface.co",
+        "cdn-lfs-us-1.huggingface.co"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/archive-org:Internet Archive Files Resolver",
+      "name": "Internet Archive Files Resolver",
+      "namespace": "https://omni.downloader/resolvers/archive-org",
+      "version": "1.0.0",
+      "category": "archives",
+      "author": "OmniDownloader Community",
+      "description": "Lists public files, formats, and sizes from an Internet Archive item.",
+      "filename": "internet-archive.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/internet-archive.user.js",
+      "matches": [
+        "https://archive.org/details/*"
+      ],
+      "includes": [],
+      "connects": [
+        "archive.org"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/krakenfiles:Krakenfiles Direct Resolver",
+      "name": "Krakenfiles Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/krakenfiles",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves direct download links from Krakenfiles pages.",
+      "filename": "krakenfiles.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/krakenfiles.user.js",
+      "matches": [
+        "https://krakenfiles.com/view/*"
+      ],
+      "includes": [],
+      "connects": [
+        "krakenfiles.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/mediafire:MediaFire Direct Resolver",
+      "name": "MediaFire Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/mediafire",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Extracts direct download URLs and file metadata from MediaFire file pages.",
+      "filename": "mediafire.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/mediafire.user.js",
+      "matches": [
+        "https://www.mediafire.com/file/*",
+        "https://mediafire.com/file/*"
+      ],
+      "includes": [],
+      "connects": [
+        "mediafire.com",
+        "download*.mediafire.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/pixeldrain:Pixeldrain Direct Resolver",
+      "name": "Pixeldrain Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/pixeldrain",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves Pixeldrain file and list links into direct high-speed downloadable streams with metadata.",
+      "filename": "pixeldrain.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/pixeldrain.user.js",
+      "matches": [
+        "https://pixeldrain.com/u/*",
+        "https://pixeldrain.com/api/file/*"
+      ],
+      "includes": [],
+      "connects": [
+        "pixeldrain.com"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/sourceforge:SourceForge Project Files Resolver",
+      "name": "SourceForge Project Files Resolver",
+      "namespace": "https://omni.downloader/resolvers/sourceforge",
+      "version": "1.0.0",
+      "category": "development",
+      "author": "OmniDownloader Community",
+      "description": "Finds official download entries on public SourceForge project file pages.",
+      "filename": "sourceforge.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/sourceforge.user.js",
+      "matches": [
+        "https://sourceforge.net/projects/*/files/*"
+      ],
+      "includes": [],
+      "connects": [
+        "sourceforge.net"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/media-sniffer:Universal Media & Stream Sniffer",
+      "name": "Universal Media & Stream Sniffer",
+      "namespace": "https://omni.downloader/resolvers/media-sniffer",
+      "version": "1.0.0",
+      "category": "media",
+      "author": "OmniDownloader Community",
+      "description": "Sniffs HTML5 video, audio, and embedded HLS (.m3u8) / DASH (.mpd) / MP4 streams from any webpage.",
+      "filename": "universal-media-sniffer.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/universal-media-sniffer.user.js",
+      "matches": [
+        "*://*/*"
+      ],
+      "includes": [],
+      "connects": [
+        "*"
+      ]
+    }
+  ]
+}

@@ -26,6 +26,11 @@ data class DownloadTaskEntity(
     val updatedAt: Long,
     val errorCode: String?,
     val errorMessage: String?,
+    val resolvedUrl: String?,
+    val etag: String?,
+    val lastModified: String?,
+    val speedBytesPerSecond: Long,
+    val etaSeconds: Long?,
 )
 
 @Entity(

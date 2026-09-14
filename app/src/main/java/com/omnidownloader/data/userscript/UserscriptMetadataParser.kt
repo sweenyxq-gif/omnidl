@@ -7,21 +7,24 @@ object UserscriptMetadataParser {
 
     private val headerStartRegex = Regex("""//\s*==UserScript==""", RegexOption.IGNORE_CASE)
     private val headerEndRegex = Regex("""//\s*==/UserScript==""", RegexOption.IGNORE_CASE)
-    private val tagRegex = Regex("""//\s*@([a-zA-Z0-9_\-]+)(?:\s+(.*))?""")
+    private val tagRegex = Regex("""//\s*@([a-zA-Z0-9_\-.:]+)(?:\s+(.*))?""")
 
     fun parse(rawScript: String): UserscriptMetadata? {
-        val lines = rawScript.lineSequence()
+        val cleanScript = rawScript.removePrefix("\uFEFF").trim()
+        val lines = cleanScript.lineSequence()
         var insideHeader = false
+        var closedHeader = false
         val tags = mutableMapOf<String, MutableList<String>>()
 
         for (line in lines) {
-            val trimmed = line.trim()
+            val trimmed = line.trim().removePrefix("\uFEFF")
             if (!insideHeader) {
                 if (headerStartRegex.containsMatchIn(trimmed)) {
                     insideHeader = true
                 }
             } else {
                 if (headerEndRegex.containsMatchIn(trimmed)) {
+                    closedHeader = true
                     break
                 }
                 val match = tagRegex.matchEntire(trimmed)
@@ -33,12 +36,15 @@ object UserscriptMetadataParser {
             }
         }
 
-        if (tags.isEmpty()) return null
+        if (tags.isEmpty() || !closedHeader) return null
 
-        val name = tags["name"]?.firstOrNull() ?: "Unnamed Userscript"
+        val name = tags["name"]?.firstOrNull()
+            ?: tags.entries.firstOrNull { it.key.startsWith("name") }?.value?.firstOrNull()
+            ?: "Unnamed Userscript"
         val namespace = tags["namespace"]?.firstOrNull()
         val version = tags["version"]?.firstOrNull() ?: "1.0.0"
         val description = tags["description"]?.firstOrNull()
+            ?: tags.entries.firstOrNull { it.key.startsWith("description") }?.value?.firstOrNull()
         val author = tags["author"]?.firstOrNull()
         val matches = tags["match"].orEmpty()
         val includes = tags["include"].orEmpty()
@@ -49,6 +55,8 @@ object UserscriptMetadataParser {
         val isOmniResolver = tags["omni-resolver"]?.firstOrNull()?.equals("false", ignoreCase = true) != true
         val omniApiVersion = tags["omni-api"]?.firstOrNull()?.toIntOrNull() ?: 1
         val category = tags["omni-category"]?.firstOrNull()
+        val updateUrl = tags["updateurl"]?.firstOrNull()
+        val downloadUrl = tags["downloadurl"]?.firstOrNull()
 
         val id = buildScriptId(namespace, name)
 
@@ -67,7 +75,9 @@ object UserscriptMetadataParser {
             isOmniResolver = isOmniResolver,
             omniApiVersion = omniApiVersion,
             category = category,
-            rawScript = rawScript
+            rawScript = rawScript,
+            updateUrl = updateUrl,
+            downloadUrl = downloadUrl,
         )
     }
 
@@ -102,7 +112,7 @@ object UserscriptMetadataParser {
         val schemeSplit = pattern.indexOf("://")
         if (schemeSplit == -1) {
             // Simple wildcard string
-            return "^" + Regex.escape(pattern).replace("\\*", ".*") + "$"
+            return "^" + wildcardRegex(pattern) + "$"
         }
 
         val schemePart = pattern.substring(0, schemeSplit)
@@ -123,9 +133,15 @@ object UserscriptMetadataParser {
             else -> Regex.escape(hostPart)
         }
 
-        val pathRegex = Regex.escape(pathPart).replace("\\*", ".*")
+        val pathRegex = wildcardRegex(pathPart)
 
         return "^$schemeRegex://$hostRegex$pathRegex$"
+    }
+
+    private fun wildcardRegex(value: String): String = buildString {
+        value.forEach { character ->
+            if (character == '*') append(".*") else append(Regex.escape(character.toString()))
+        }
     }
 
     private fun buildScriptId(namespace: String?, name: String): String {

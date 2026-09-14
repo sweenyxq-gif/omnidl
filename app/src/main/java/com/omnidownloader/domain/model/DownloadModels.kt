@@ -41,6 +41,11 @@ data class DownloadTask(
     val createdAt: Long = System.currentTimeMillis(),
     val errorCode: DownloadErrorCode? = null,
     val errorMessage: String? = null,
+    val resolvedUrl: String? = null,
+    val etag: String? = null,
+    val lastModified: String? = null,
+    val speedBytesPerSecond: Long = 0,
+    val etaSeconds: Long? = null,
 )
 
 data class DownloadProgress(
@@ -62,4 +67,18 @@ data class DownloadPreview(
     val mimeType: String,
     val supportsRanges: Boolean,
     val finalUrl: String,
+    val etag: String? = null,
+    val lastModified: String? = null,
+)
+
+data class TorrentFilePreview(val index: Int, val path: String, val size: Long)
+
+data class TorrentMetadata(
+    val source: String,
+    val name: String,
+    val totalBytes: Long,
+    val files: List<TorrentFilePreview>,
+    val infoHash: String,
+    val trackerCount: Int,
+    val comment: String? = null,
 )

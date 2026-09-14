@@ -37,6 +37,15 @@ class HttpInspector @Inject constructor(private val client: OkHttpClient, privat
         val size = contentRangeTotal ?: primary.header("Content-Length")?.toLongOrNull() ?: fallback?.header("Content-Length")?.toLongOrNull() ?: -1
         val ranges = primary.code == 206 || primary.header("Accept-Ranges")?.contains("bytes", true) == true || fallback?.header("Accept-Ranges")?.contains("bytes", true) == true
         val source = detector.detect(finalUrl, mime) ?: error("Unsupported source")
-        return DownloadPreview(source, FileNameParser.resolve(disposition, finalUrl, mime), size, mime, ranges, finalUrl)
+        return DownloadPreview(
+            source = source,
+            fileName = FileNameParser.resolve(disposition, finalUrl, mime),
+            size = size,
+            mimeType = mime,
+            supportsRanges = ranges,
+            finalUrl = finalUrl,
+            etag = primary.header("ETag") ?: fallback?.header("ETag"),
+            lastModified = primary.header("Last-Modified") ?: fallback?.header("Last-Modified"),
+        )
     }
 }

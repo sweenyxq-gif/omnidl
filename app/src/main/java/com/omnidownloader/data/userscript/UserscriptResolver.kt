@@ -12,7 +12,8 @@ import javax.inject.Singleton
 
 @Singleton
 class UserscriptResolver @Inject constructor(
-    private val engine: UserscriptEngine
+    private val engine: UserscriptEngine,
+    private val storage: UserscriptStorage,
 ) : Resolver {
     override val id: String = "userscript_resolver"
     override val priority: Int = 90
@@ -21,6 +22,7 @@ class UserscriptResolver @Inject constructor(
     val installedScripts: StateFlow<Map<String, UserscriptMetadata>> = _installedScripts.asStateFlow()
 
     init {
+        _installedScripts.value = storage.loadScripts().associateBy { it.id }
         // Pre-load a sample built-in resolver: GitHub Release direct artifact resolver
         val sampleGithubResolver = """
             // ==UserScript==
@@ -61,44 +63,80 @@ class UserscriptResolver @Inject constructor(
                 omni.log("No downloadable assets found in release tag.");
             }
         """.trimIndent()
-        registerScript(sampleGithubResolver)
+        UserscriptMetadataParser.parse(sampleGithubResolver)?.copy(builtIn = true)?.let { builtIn ->
+            _installedScripts.value = _installedScripts.value + (builtIn.id to builtIn)
+        }
     }
 
     fun registerScript(rawScript: String): UserscriptMetadata? {
+        if (rawScript.length > 1_000_000) return null
         val meta = UserscriptMetadataParser.parse(rawScript) ?: return null
-        if (!meta.isOmniResolver) return null
+        if (!isInstallable(meta) || _installedScripts.value[meta.id]?.builtIn == true) return null
         _installedScripts.value = _installedScripts.value + (meta.id to meta)
+        persist()
         return meta
     }
 
-    fun unregisterScript(id: String) {
+    fun unregisterScript(id: String): Boolean {
+        if (_installedScripts.value[id]?.builtIn == true) return false
         _installedScripts.value = _installedScripts.value - id
+        storage.clear(id)
+        persist()
+        return true
+    }
+
+    fun setEnabled(id: String, enabled: Boolean) {
+        val script = _installedScripts.value[id] ?: return
+        _installedScripts.value = _installedScripts.value + (id to script.copy(enabled = enabled))
+        persist()
     }
 
     fun getScript(id: String): UserscriptMetadata? = _installedScripts.value[id]
 
     override fun canHandle(url: String): Boolean {
         return _installedScripts.value.values.any { meta ->
+            meta.enabled &&
             UserscriptMetadataParser.matchesUrl(meta, url)
         }
     }
 
     override suspend fun resolve(request: ResolveRequest): ResolveResult {
-        val matchedScript = _installedScripts.value.values.firstOrNull { meta ->
-            UserscriptMetadataParser.matchesUrl(meta, request.url)
-        } ?: return ResolveResult.Unsupported(request.url)
+        val matchedScripts = _installedScripts.value.values.filter { meta ->
+            meta.enabled && UserscriptMetadataParser.matchesUrl(meta, request.url)
+        }
+        if (matchedScripts.isEmpty()) return ResolveResult.Unsupported(request.url)
 
-        val result = engine.execute(matchedScript, request.url)
-        return if (result.success && result.resolvedItems.isNotEmpty()) {
+        val results = matchedScripts.flatMap { script ->
+            val execution = engine.execute(script, request.url)
+            if (execution.success) execution.resolvedItems else emptyList()
+        }.distinctBy { it.url }
+        return if (results.isNotEmpty()) {
             ResolveResult.Success(
                 originalUrl = request.url,
-                results = result.resolvedItems
+                results = results
             )
         } else {
             ResolveResult.Failed(
                 originalUrl = request.url,
-                reason = result.error ?: "Script execution did not produce any resolved items"
+                reason = "Matching scripts did not produce any resolved items"
             )
         }
     }
+
+    private fun isInstallable(meta: UserscriptMetadata): Boolean {
+        val supportedGrants = setOf(
+            "none", "GM_log", "GM_getValue", "GM_setValue", "GM_deleteValue",
+            "GM_listValues", "GM_xmlhttpRequest",
+            "GM_openInTab", "GM.openInTab", "GM_addStyle", "GM_download",
+            "unsafeWindow", "GM_setClipboard", "GM_notification",
+            "GM_registerMenuCommand", "GM_info"
+        )
+        return meta.isOmniResolver &&
+            meta.id.isNotBlank() &&
+            meta.omniApiVersion == 1 &&
+            (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) &&
+            meta.grants.all { it in supportedGrants }
+    }
+
+    private fun persist() = storage.saveScripts(_installedScripts.value.values)
 }

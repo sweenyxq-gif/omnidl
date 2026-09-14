@@ -13,8 +13,8 @@ android {
         applicationId = "com.omnidownloader"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.4.0"
         testInstrumentationRunner = "com.omnidownloader.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -23,10 +23,23 @@ android {
     composeOptions { kotlinCompilerExtensionVersion = "1.5.13" }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 
+    val releaseStorePath = providers.environmentVariable("OMNIDL_KEYSTORE_PATH").orNull
+    val releaseStorePassword = providers.environmentVariable("OMNIDL_KEYSTORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.environmentVariable("OMNIDL_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.environmentVariable("OMNIDL_KEY_PASSWORD").orNull
+    if (listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseStorePath!!)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

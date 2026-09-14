@@ -5,9 +5,14 @@ import com.omnidownloader.data.resolver.DirectUrlResolver
 import com.omnidownloader.data.resolver.GenericWebpageResolver
 import com.omnidownloader.data.resolver.RedirectResolver
 import com.omnidownloader.data.resolver.ResolverManager
+import com.omnidownloader.data.userscript.UserscriptEngine
+import com.omnidownloader.data.userscript.UserscriptResolver
+import com.omnidownloader.data.userscript.UserscriptStorage
 import com.omnidownloader.domain.model.SourceType
 import com.omnidownloader.domain.resolver.ResolveRequest
 import com.omnidownloader.domain.resolver.ResolveResult
+import com.omnidownloader.domain.userscript.UserscriptExecutionResult
+import com.omnidownloader.domain.userscript.UserscriptMetadata
 import com.omnidownloader.download.core.SourceDetector
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -17,7 +22,14 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import androidx.test.core.app.ApplicationProvider
+import android.content.Context
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ResolverAndInspectorTest {
 
     @Test
@@ -162,6 +174,10 @@ class ResolverAndInspectorTest {
     fun resolverManagerChainsResolversByPriority() = runTest {
         val manager = ResolverManager(
             directUrlResolver = DirectUrlResolver(SourceDetector()),
+            userscriptResolver = UserscriptResolver(object : UserscriptEngine {
+                override suspend fun execute(metadata: UserscriptMetadata, targetUrl: String) =
+                    UserscriptExecutionResult(success = false)
+            }, UserscriptStorage(ApplicationProvider.getApplicationContext<Context>())),
             redirectResolver = RedirectResolver(OkHttpClient()),
             genericWebpageResolver = GenericWebpageResolver(OkHttpClient())
         )

@@ -25,8 +25,10 @@ interface DownloadDao {
 
     @Query("UPDATE download_tasks SET status=:status,errorCode=:errorCode,errorMessage=:errorMessage,updatedAt=:now WHERE id=:id")
     suspend fun setStatus(id: String, status: String, errorCode: String?, errorMessage: String?, now: Long = System.currentTimeMillis())
-    @Query("UPDATE download_tasks SET downloadedBytes=:downloaded,totalBytes=:total,updatedAt=:now WHERE id=:id")
-    suspend fun updateProgress(id: String, downloaded: Long, total: Long, now: Long = System.currentTimeMillis())
+    @Query("UPDATE download_tasks SET downloadedBytes=:downloaded,totalBytes=:total,speedBytesPerSecond=:speed,etaSeconds=:eta,updatedAt=:now WHERE id=:id")
+    suspend fun updateProgress(id: String, downloaded: Long, total: Long, speed: Long, eta: Long?, now: Long = System.currentTimeMillis())
+    @Query("UPDATE download_tasks SET resolvedUrl=:resolvedUrl,etag=:etag,lastModified=:lastModified,updatedAt=:now WHERE id=:id")
+    suspend fun updateRemoteMetadata(id: String, resolvedUrl: String, etag: String?, lastModified: String?, now: Long = System.currentTimeMillis())
     @Query("UPDATE download_tasks SET status=:next,updatedAt=:now WHERE status IN ('DOWNLOADING','RESOLVING')") suspend fun recover(next: String, now: Long = System.currentTimeMillis())
     @Query("DELETE FROM download_tasks WHERE id=:id") suspend fun deleteTask(id: String)
     @Query("DELETE FROM download_tasks WHERE status='COMPLETED'") suspend fun clearCompleted()

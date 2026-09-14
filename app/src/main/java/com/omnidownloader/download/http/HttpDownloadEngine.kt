@@ -6,6 +6,7 @@ import com.omnidownloader.data.database.DownloadHistoryEntity
 import com.omnidownloader.data.database.DownloadSegmentEntity
 import com.omnidownloader.data.repository.SettingsRepository
 import com.omnidownloader.data.storage.SafStorage
+import com.omnidownloader.download.core.PerformancePolicy
 import com.omnidownloader.domain.engine.DownloadEngine
 import com.omnidownloader.domain.model.*
 import com.omnidownloader.domain.repository.DownloadRepository
@@ -22,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.omnidownloader.service.PowerStateMonitor
 import kotlin.math.max
 
 @Singleton
@@ -32,6 +34,7 @@ class HttpDownloadEngine @Inject constructor(
     private val repository: DownloadRepository,
     private val storage: SafStorage,
     private val settingsRepository: SettingsRepository,
+    private val powerStateMonitor: PowerStateMonitor,
 ) : DownloadEngine {
     private val jobs = ConcurrentHashMap<String, Job>()
     private val actions = ConcurrentHashMap<String, DownloadStatus>()
@@ -56,7 +59,10 @@ class HttpDownloadEngine @Inject constructor(
             val code = classify(error)
             repository.setStatus(task.id, DownloadStatus.FAILED, code.name, error.message ?: code.name)
             emit(task.id, status = DownloadStatus.FAILED, error = error.message)
-        } finally { jobs.remove(task.id, job) }
+        } finally {
+            jobs.remove(task.id, job)
+            progress.remove(task.id)
+        }
     }
 
     override suspend fun pause(id: String) { actions[id] = DownloadStatus.PAUSED; jobs[id]?.cancelAndJoin() ?: repository.setStatus(id, DownloadStatus.PAUSED) }
@@ -65,6 +71,7 @@ class HttpDownloadEngine @Inject constructor(
         actions[id] = DownloadStatus.CANCELLED
         jobs[id]?.cancelAndJoin()
         repository.setStatus(id, DownloadStatus.CANCELLED)
+        progress.remove(id)
         cleanup(id)
     }
 
@@ -74,11 +81,19 @@ class HttpDownloadEngine @Inject constructor(
         val source = original.source as DownloadSource.Http
         val probe = probe(source.value, original.headers)
         val total = if (probe.total > 0) probe.total else original.totalBytes
-        val useSegments = probe.ranges && total > 0 && original.connections > 1
-        val ranges = if (useSegments) RangeCalculator.calculate(total, original.connections) else listOf(ByteRange(0, 0, if (total > 0) total - 1 else Long.MAX_VALUE))
+        repository.updateRemoteMetadata(original.id, probe.finalUrl, probe.etag, probe.lastModified)
+        val preferences = settingsRepository.settings.first()
+        val savingPower = powerStateMonitor.isPowerSaveMode()
+        val connectionCeiling = PerformancePolicy.httpConnections(original.connections, preferences.ecoMode, savingPower)
+        val updateInterval = PerformancePolicy.progressIntervalMs(preferences.ecoMode, savingPower)
+        val maxAttempts = preferences.retries.coerceIn(0, 10) + 1
+        val connectionCount = AdaptiveConnectionPolicy.initialConnections(total, connectionCeiling, probe.ranges, probe.multiplexed)
+        val useSegments = connectionCount > 1
+        val ranges = if (useSegments) RangeCalculator.calculate(total, connectionCount) else listOf(ByteRange(0, 0, if (total > 0) total - 1 else Long.MAX_VALUE))
         val segmentDir = File(context.noBackupFilesDir, "segments/${original.id}").apply { mkdirs() }
         val old = dao.segments(original.id)
-        val compatible = old.size == ranges.size && old.zip(ranges).all { (a, b) -> a.startByte == b.start && a.endByte == b.endInclusive }
+        val validatorSafe = old.isEmpty() || validatorsMatch(original, probe)
+        val compatible = validatorSafe && old.size == ranges.size && old.zip(ranges).all { (a, b) -> a.startByte == b.start && a.endByte == b.endInclusive }
         if (!compatible) { dao.deleteSegments(original.id); segmentDir.deleteRecursively() ; segmentDir.mkdirs() }
         val existing = if (compatible) old.associateBy { it.segmentIndex } else emptyMap()
         val segments = ranges.map { range ->
@@ -95,29 +110,41 @@ class HttpDownloadEngine @Inject constructor(
         val updateMutex = Mutex()
         var lastUpdateAt = System.currentTimeMillis()
         var lastUpdateBytes = downloaded.get()
+        var smoothedSpeed = 0L
 
         segments.map { segment -> async(Dispatchers.IO) {
-            if (!segment.complete) downloadSegment(original, segment, useSegments, downloaded) { nowBytes ->
+            if (!segment.complete) downloadSegment(original, segment, useSegments, downloaded, probe.ifRange, probe.etag, probe.lastModified, maxAttempts) { nowBytes ->
                 updateMutex.withLock {
                     val now = System.currentTimeMillis()
-                    if (now - lastUpdateAt >= 500) {
-                        val speed = ((nowBytes - lastUpdateBytes) * 1000 / max(1, now - lastUpdateAt)).coerceAtLeast(0)
-                        repository.updateProgress(original.id, nowBytes, total)
-                        emit(original.id, nowBytes, total, speed, DownloadStatus.DOWNLOADING)
+                    if (now - lastUpdateAt >= updateInterval) {
+                        val measuredSpeed = ((nowBytes - lastUpdateBytes) * 1000 / max(1, now - lastUpdateAt)).coerceAtLeast(0)
+                        smoothedSpeed = if (smoothedSpeed == 0L) measuredSpeed else (smoothedSpeed * 3 + measuredSpeed) / 4
+                        val eta = if (smoothedSpeed > 0 && total > nowBytes) (total - nowBytes) / smoothedSpeed else null
+                        repository.updateProgress(original.id, nowBytes, total, smoothedSpeed, eta)
+                        emit(original.id, nowBytes, total, smoothedSpeed, DownloadStatus.DOWNLOADING)
                         lastUpdateAt = now; lastUpdateBytes = nowBytes
                     }
                 }
             }
         } }.awaitAll()
-        repository.updateProgress(original.id, downloaded.get(), total)
+        repository.updateProgress(original.id, downloaded.get(), total, 0, null)
         mergeAndCommit(original, segments, total)
         cleanup(original.id)
     }
 
-    private suspend fun downloadSegment(task: DownloadTask, segment: DownloadSegmentEntity, ranged: Boolean, totalDownloaded: AtomicLong, onProgress: suspend (Long) -> Unit) {
+    private suspend fun downloadSegment(
+        task: DownloadTask,
+        segment: DownloadSegmentEntity,
+        ranged: Boolean,
+        totalDownloaded: AtomicLong,
+        ifRange: String?,
+        expectedEtag: String?,
+        expectedLastModified: String?,
+        maxAttempts: Int,
+        onProgress: suspend (Long) -> Unit,
+    ) {
         val file = File(segment.tempPath)
         var have = file.length()
-        val maxAttempts = settingsRepository.settings.first().retries.coerceIn(0, 10) + 1
         var attempt = 0
         while (true) {
             try {
@@ -126,10 +153,20 @@ class HttpDownloadEngine @Inject constructor(
                 if (ranged || have > 0) {
                     val end = if (segment.endByte == Long.MAX_VALUE) "" else segment.endByte.toString()
                     builder.header("Range", "bytes=${segment.startByte + have}-$end")
+                    ifRange?.let { builder.header("If-Range", it) }
                 }
                 client.newCall(builder.build()).execute().use { response ->
                     if (!response.isSuccessful) throw HttpStatusException(response.code)
                     if ((ranged || have > 0) && response.code != 206) throw NoResumeException()
+                    if (response.code == 206) {
+                        val requestedStart = segment.startByte + have
+                        val actualStart = response.header("Content-Range")?.substringAfter("bytes ")?.substringBefore('-')?.toLongOrNull()
+                        if (actualStart != requestedStart) throw RemoteResourceChangedException("Server returned an invalid byte range")
+                    }
+                    val responseEtag = response.header("ETag")
+                    val responseModified = response.header("Last-Modified")
+                    if (expectedEtag != null && responseEtag != null && expectedEtag != responseEtag) throw RemoteResourceChangedException()
+                    if (expectedEtag == null && expectedLastModified != null && responseModified != null && expectedLastModified != responseModified) throw RemoteResourceChangedException()
                     val body = response.body ?: throw IOException("Empty response body")
                     file.parentFile?.mkdirs()
                     java.io.FileOutputStream(file, have > 0).buffered().use { output ->
@@ -181,7 +218,16 @@ class HttpDownloadEngine @Inject constructor(
         } catch (e: Throwable) { if (!committed) storage.abort(pending); throw e }
     }
 
-    private data class Probe(val total: Long, val ranges: Boolean)
+    private data class Probe(
+        val total: Long,
+        val ranges: Boolean,
+        val finalUrl: String,
+        val etag: String?,
+        val lastModified: String?,
+        val multiplexed: Boolean,
+    ) {
+        val ifRange: String? get() = RemoteValidatorPolicy.ifRange(etag, lastModified)
+    }
     private fun probe(url: String, headers: Map<String, String>): Probe {
         val builder = Request.Builder().url(url).header("Range", "bytes=0-0")
         headers.forEach { (k, v) -> builder.header(k, v) }
@@ -191,9 +237,23 @@ class HttpDownloadEngine @Inject constructor(
             val total = response.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
                 ?: response.header("Content-Length")?.toLongOrNull()?.takeIf { !ranged }
                 ?: -1
-            return Probe(total, ranged)
+            return Probe(
+                total = total,
+                ranges = ranged,
+                finalUrl = response.request.url.toString(),
+                etag = response.header("ETag"),
+                lastModified = response.header("Last-Modified"),
+                multiplexed = response.protocol == okhttp3.Protocol.HTTP_2 || response.protocol == okhttp3.Protocol.QUIC,
+            )
         }
     }
+
+    private fun validatorsMatch(task: DownloadTask, probe: Probe): Boolean = RemoteValidatorPolicy.canReuse(
+        storedEtag = task.etag,
+        storedLastModified = task.lastModified,
+        currentEtag = probe.etag,
+        currentLastModified = probe.lastModified,
+    )
 
     private suspend fun throttle(limit: Long, bytes: Int) { if (limit > 0) delay((bytes * 1000L / limit).coerceAtMost(2_000L)) }
     private fun cleanup(id: String) { File(context.noBackupFilesDir, "segments/$id").deleteRecursively() }
@@ -204,7 +264,8 @@ class HttpDownloadEngine @Inject constructor(
     }
     private fun classify(e: Throwable) = when (e) {
         is HttpStatusException -> DownloadErrorCode.HTTP_ERROR; is NoResumeException -> DownloadErrorCode.SERVER_NO_RESUME
-        is ChecksumException -> DownloadErrorCode.CHECKSUM_FAILED; is SecurityException -> DownloadErrorCode.PERMISSION_DENIED
+        is ChecksumException -> DownloadErrorCode.CHECKSUM_FAILED; is RemoteResourceChangedException -> DownloadErrorCode.RESOLUTION_FAILED
+        is SecurityException -> DownloadErrorCode.PERMISSION_DENIED
         is java.net.SocketTimeoutException -> DownloadErrorCode.TIMEOUT; is IOException -> DownloadErrorCode.NETWORK_ERROR
         else -> DownloadErrorCode.STORAGE_ERROR
     }
@@ -213,3 +274,4 @@ class HttpDownloadEngine @Inject constructor(
 class HttpStatusException(val code: Int) : IOException("Server returned HTTP $code")
 class NoResumeException : IOException("Server did not honor the resume request")
 class ChecksumException(actual: String) : IOException("SHA-256 checksum mismatch (actual $actual)")
+class RemoteResourceChangedException(message: String = "The remote file changed; restart the download") : IOException(message)

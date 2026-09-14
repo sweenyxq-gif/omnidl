@@ -28,6 +28,8 @@ class MockWebServerInspectionTest {
                     .addHeader("Content-Disposition", "attachment; filename*=UTF-8''real%20name.zip")
                     .addHeader("Content-Type", "application/zip")
                     .addHeader("Content-Range", "bytes 0-0/4096")
+                    .addHeader("ETag", "\"asset-v2\"")
+                    .addHeader("Last-Modified", "Sun, 14 Sep 2026 10:00:00 GMT")
                     .setBody("x")
             }
         }
@@ -37,6 +39,8 @@ class MockWebServerInspectionTest {
             assertEquals("real name.zip", result.fileName)
             assertEquals(4096, result.size)
             assertTrue(result.supportsRanges)
+            assertEquals("\"asset-v2\"", result.etag)
+            assertEquals("Sun, 14 Sep 2026 10:00:00 GMT", result.lastModified)
         } finally { server.shutdown() }
     }
 }

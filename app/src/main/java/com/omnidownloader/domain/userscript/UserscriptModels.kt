@@ -17,7 +17,22 @@ data class UserscriptMetadata(
     val isOmniResolver: Boolean = true,
     val omniApiVersion: Int = 1,
     val category: String? = null,
-    val rawScript: String = ""
+    val rawScript: String = "",
+    val enabled: Boolean = true,
+    val builtIn: Boolean = false,
+    val updateUrl: String? = null,
+    val downloadUrl: String? = null,
+)
+
+data class ExtensionUpdateInfo(
+    val scriptId: String,
+    val name: String,
+    val currentVersion: String,
+    val newVersion: String,
+    val updateSourceUrl: String,
+    val newScriptCode: String,
+    val newMetadata: UserscriptMetadata,
+    val newPermissions: List<String> = emptyList(),
 )
 
 data class ScriptNetworkLog(

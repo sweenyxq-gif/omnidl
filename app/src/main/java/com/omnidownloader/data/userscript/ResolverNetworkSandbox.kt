@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -92,7 +93,16 @@ class ResolverNetworkSandbox @Inject constructor(
         reqBuilder.method(httpMethod, reqBody)
 
         val startTime = System.currentTimeMillis()
-        val response = sandboxClient.newCall(reqBuilder.build()).execute()
+        val guardedClient = sandboxClient.newBuilder()
+            .addNetworkInterceptor { chain ->
+                val redirectedHost = chain.request().url.host.lowercase()
+                if (isBlockedHost(redirectedHost) || !isDomainPermitted(metadata, redirectedHost)) {
+                    throw SecurityException("Sandbox blocked redirect to '$redirectedHost'")
+                }
+                chain.proceed(chain.request())
+            }
+            .build()
+        val response = guardedClient.newCall(reqBuilder.build()).execute()
         val latency = System.currentTimeMillis() - startTime
 
         response.use { res ->
@@ -155,12 +165,19 @@ class ResolverNetworkSandbox @Inject constructor(
     }
 
     private fun isBlockedHost(host: String): Boolean {
+        if (host.isBlank()) return true
         if (host in BLOCKED_HOSTS) return true
         if (host.startsWith("10.") || host.startsWith("192.168.")) return true
         if (host.startsWith("172.")) {
             val secondOctet = host.substringAfter("172.").substringBefore('.').toIntOrNull()
             if (secondOctet != null && secondOctet in 16..31) return true
         }
-        return false
+        return runCatching {
+            InetAddress.getAllByName(host).any { address ->
+                address.isAnyLocalAddress || address.isLoopbackAddress ||
+                    address.isLinkLocalAddress || address.isSiteLocalAddress ||
+                    address.isMulticastAddress
+            }
+        }.getOrDefault(true)
     }
 }

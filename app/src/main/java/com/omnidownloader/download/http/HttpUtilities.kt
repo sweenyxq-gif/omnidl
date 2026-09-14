@@ -21,6 +21,38 @@ object RangeCalculator {
     }
 }
 
+/** Conservative first-pass connection selection; runtime growth can build on these safe caps. */
+object AdaptiveConnectionPolicy {
+    fun initialConnections(totalBytes: Long, userLimit: Int, supportsRanges: Boolean, multiplexed: Boolean): Int {
+        if (!supportsRanges || totalBytes <= 0) return 1
+        val sizeCap = when {
+            totalBytes < 2L * 1024 * 1024 -> 1
+            totalBytes < 16L * 1024 * 1024 -> 2
+            totalBytes < 128L * 1024 * 1024 -> 4
+            totalBytes < 1024L * 1024 * 1024 -> 6
+            else -> 8
+        }
+        val protocolCap = if (multiplexed) 4 else 8
+        return userLimit.coerceIn(1, 16).coerceAtMost(sizeCap).coerceAtMost(protocolCap)
+    }
+}
+
+object RemoteValidatorPolicy {
+    fun canReuse(
+        storedEtag: String?,
+        storedLastModified: String?,
+        currentEtag: String?,
+        currentLastModified: String?,
+    ): Boolean = when {
+        storedEtag != null -> currentEtag != null && storedEtag == currentEtag
+        storedLastModified != null -> currentLastModified != null && storedLastModified == currentLastModified
+        else -> false
+    }
+
+    fun ifRange(etag: String?, lastModified: String?): String? =
+        etag?.takeUnless { it.startsWith("W/", true) } ?: lastModified
+}
+
 object FileNameParser {
     private val forbidden = Regex("[\\\\/:*?\"<>|\\p{Cc}]")
     private val knownExtensions = mapOf(
