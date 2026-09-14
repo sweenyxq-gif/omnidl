@@ -144,7 +144,7 @@ object UserscriptMetadataParser {
         }
     }
 
-    private fun buildScriptId(namespace: String?, name: String): String {
+    fun buildScriptId(namespace: String?, name: String): String {
         val cleanName = name.lowercase().replace(Regex("[^a-z0-9_]"), "_").trim('_')
         val cleanNs = namespace?.lowercase()?.replace(Regex("[^a-z0-9_]"), "_")?.trim('_')
         return if (!cleanNs.isNullOrBlank()) "${cleanNs}_$cleanName" else cleanName

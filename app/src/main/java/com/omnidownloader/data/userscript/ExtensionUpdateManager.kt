@@ -29,14 +29,57 @@ class ExtensionUpdateManager @Inject constructor(
         require(trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) {
             "Only HTTP and HTTPS URLs are supported"
         }
-        val req = Request.Builder().url(trimmed).build()
-        client.newCall(req).execute().use { response ->
-            if (!response.isSuccessful) throw java.io.IOException("HTTP error ${response.code} fetching script")
-            val body = response.body?.source() ?: throw java.io.IOException("Empty response body")
-            val buffer = okio.Buffer()
-            body.read(buffer, 1_000_000) // max 1MB
-            buffer.readUtf8()
+        val normalized = normalizeUrl(trimmed)
+        val urlsToTry = mutableListOf(normalized)
+
+        // If it is a raw.githubusercontent.com URL, also try jsDelivr CDN fallback to bypass regional ISP blocks
+        val rawGhRegex = Regex("""^https?://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.*)$""", RegexOption.IGNORE_CASE)
+        val match = rawGhRegex.matchEntire(normalized)
+        if (match != null) {
+            val user = match.groupValues[1]
+            val repo = match.groupValues[2]
+            val branch = match.groupValues[3]
+            val path = match.groupValues[4]
+            urlsToTry.add(0, "https://cdn.jsdelivr.net/gh/$user/$repo@$branch/$path")
         }
+
+        var lastError: Exception? = null
+        for (targetUrl in urlsToTry) {
+            try {
+                val req = Request.Builder()
+                    .url(targetUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36")
+                    .build()
+                client.newCall(req).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyText = response.body?.string().orEmpty()
+                        if (bodyText.isNotBlank()) {
+                            return@withContext bodyText
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+
+        // Fallback: Check if the requested script is available in bundled assets
+        getBundledScriptByUrl(trimmed)?.let { return@withContext it }
+
+        throw lastError ?: java.io.IOException("Failed to fetch script from $trimmed")
+    }
+
+    fun getBundledScriptByUrl(inputUrl: String): String? {
+        val clean = inputUrl.substringBefore('?').substringBefore('#')
+        val filename = clean.substringAfterLast('/')
+        if (filename.endsWith(".user.js")) {
+            return try {
+                context.assets.open("userscripts/$filename").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        return null
     }
 
     suspend fun checkScriptForUpdate(installed: UserscriptMetadata): ExtensionUpdateInfo? = withContext(Dispatchers.IO) {
@@ -233,12 +276,12 @@ class ExtensionUpdateManager @Inject constructor(
             val obj = array.optJSONObject(i) ?: continue
             val name = obj.optString("name").ifBlank { "Unnamed" }
             val namespace = obj.optString("namespace").ifBlank { null }
-            val id = obj.optString("id").ifBlank { if (namespace != null) "$namespace:$name" else name }
             val version = obj.optString("version").ifBlank { "1.0.0" }
             val category = obj.optString("category").ifBlank { "general" }
             val author = obj.optString("author").ifBlank { null }
             val description = obj.optString("description").ifBlank { null }
             val scriptUrl = obj.optString("scriptUrl").ifBlank { obj.optString("url") }
+            val filename = obj.optString("filename").ifBlank { null }
 
             val matches = mutableListOf<String>()
             obj.optJSONArray("matches")?.let { ma ->
@@ -253,20 +296,33 @@ class ExtensionUpdateManager @Inject constructor(
                 for (j in 0 until ca.length()) connects.add(ca.getString(j))
             }
 
+            val bundledCode = if (filename != null) {
+                try {
+                    context.assets.open("userscripts/$filename").bufferedReader().use { it.readText() }
+                } catch (e: Exception) {
+                    ""
+                }
+            } else ""
+
+            val parsedBundled = if (bundledCode.isNotBlank()) UserscriptMetadataParser.parse(bundledCode) else null
+            val finalId = parsedBundled?.id ?: UserscriptMetadataParser.buildScriptId(namespace, name)
+
             list.add(
                 UserscriptMetadata(
-                    id = id,
-                    name = name,
-                    namespace = namespace,
-                    version = version,
+                    id = finalId,
+                    name = parsedBundled?.name ?: name,
+                    namespace = parsedBundled?.namespace ?: namespace,
+                    version = parsedBundled?.version ?: version,
                     category = category,
-                    author = author,
-                    description = description,
-                    matches = matches,
-                    includes = includes,
-                    connects = connects,
+                    author = parsedBundled?.author ?: author,
+                    description = parsedBundled?.description ?: description,
+                    matches = if (parsedBundled != null && parsedBundled.matches.isNotEmpty()) parsedBundled.matches else matches,
+                    includes = if (parsedBundled != null && parsedBundled.includes.isNotEmpty()) parsedBundled.includes else includes,
+                    connects = if (parsedBundled != null && parsedBundled.connects.isNotEmpty()) parsedBundled.connects else connects,
+                    grants = parsedBundled?.grants ?: emptySet(),
+                    rawScript = bundledCode,
                     downloadUrl = scriptUrl,
-                    updateUrl = scriptUrl,
+                    updateUrl = parsedBundled?.updateUrl ?: scriptUrl,
                     isOmniResolver = true,
                     omniApiVersion = 1,
                     builtIn = false

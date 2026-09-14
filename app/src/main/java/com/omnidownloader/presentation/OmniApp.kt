@@ -1915,7 +1915,7 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
             }
             val catalog = state.discoverExtensions.ifEmpty { vm.extensionCatalog }
             catalog.forEach { extension ->
-                val installed = state.installedScripts.any { it.id == extension.id }
+                val installed = state.installedScripts.any { it.id == extension.id || it.name.equals(extension.name, ignoreCase = true) }
                 ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

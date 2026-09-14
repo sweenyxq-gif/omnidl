@@ -125,15 +125,26 @@ class UserscriptResolver @Inject constructor(
 
     private fun isInstallable(meta: UserscriptMetadata): Boolean {
         val supportedGrants = setOf(
-            "none", "GM_log", "GM_getValue", "GM_setValue", "GM_deleteValue",
-            "GM_listValues", "GM_xmlhttpRequest",
-            "GM_openInTab", "GM.openInTab", "GM_addStyle", "GM_download",
-            "unsafeWindow", "GM_setClipboard", "GM_notification",
-            "GM_registerMenuCommand", "GM_info"
+            "GM_xmlhttpRequest",
+            "GM_log",
+            "GM_setValue",
+            "GM_getValue",
+            "GM_deleteValue",
+            "GM_listValues",
+            "GM_addStyle",
+            "GM_openInTab",
+            "GM.openInTab",
+            "GM_download",
+            "GM_setClipboard",
+            "GM_notification",
+            "GM_registerMenuCommand",
+            "GM_info",
+            "GM_getResourceText",
+            "GM_getResourceURL",
+            "unsafeWindow",
+            "none"
         )
-        return meta.isOmniResolver &&
-            meta.id.isNotBlank() &&
-            meta.omniApiVersion == 1 &&
+        return meta.id.isNotBlank() &&
             (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) &&
             meta.grants.all { it in supportedGrants }
     }
