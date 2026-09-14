@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-09-14
+
+- Rebuilt OmniDL around a compact graphite-and-cyan transfer-manager design with a reusable Compose component system.
+- Consolidated primary navigation into Downloads, Discover, Extensions, and Settings, with a navigation rail on tablets.
+- Added dense status-aware download rows, host search, stable transfer metrics, improved empty states, and download details/action sheets.
+- Added a clipboard-aware Add Download sheet and preserved direct download, inspection, resolver, torrent, extension, update, and settings flows.
+- Added contextual notification permission requests and reliable share/deep-link delivery while the activity is already open.
+- Fixed Wi-Fi-only transfers continuing after mobile fallback and added automatic recovery of network-paused transfers.
+- Hardened SAF writes, legacy database/settings decoding, sensitive backup exclusions, and destructive-action confirmations.
+- Added configurable retry attempts and expanded queue policy coverage.
+- Removed the obsolete exported update-download receiver.
+- Hardened the GitHub release workflow to require signing, validate tag/version agreement, and publish SHA-256 checksums.
+
 - Added validator-safe HTTP resume with persisted ETag/Last-Modified metadata, `If-Range`, and Content-Range validation.
 - Added size- and protocol-aware initial segment counts instead of always using the configured maximum.
 - Added duplicate task prevention for the same source and destination.

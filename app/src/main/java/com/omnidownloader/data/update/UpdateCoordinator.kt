@@ -49,10 +49,6 @@ class UpdateCoordinator @Inject constructor(
     private val client: OkHttpClient,
 ) {
     companion object {
-        const val PREFS = "app_updates"
-        const val KEY_ID = "download_id"
-        const val KEY_SHA = "sha256"
-        const val KEY_VERSION = "version"
         const val NOTIFICATION_ID = 2002
     }
 

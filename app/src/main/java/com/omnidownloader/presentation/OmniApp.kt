@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,26 +48,31 @@ import com.omnidownloader.domain.resolver.ResolvedItem
 import com.omnidownloader.domain.userscript.ExtensionUpdateInfo
 import com.omnidownloader.domain.userscript.UserscriptMetadata
 import com.omnidownloader.ui.theme.*
+import com.omnidownloader.ui.components.*
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 private enum class Destination(val label: String) {
     DOWNLOADS("Downloads"),
-    RESOLVE("Resolve"),
-    TORRENTS("Torrents"),
+    DISCOVER("Discover"),
     EXTENSIONS("Extensions"),
     SETTINGS("Settings")
 }
 
 private enum class DownloadTab(val label: String) {
+    ALL("All"),
     ACTIVE("Active"),
     QUEUED("Queued"),
-    COMPLETED("Done"),
+    COMPLETED("Completed"),
     FAILED("Failed")
 }
 
 @Composable
-fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
+fun OmniApp(
+    initialUrl: String,
+    viewModel: MainViewModel,
+    onRequestNotificationPermission: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val dark = when (state.settings.theme) {
         "DARK" -> true
@@ -74,14 +80,14 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
         else -> androidx.compose.foundation.isSystemInDarkTheme()
     }
     OmniTheme(darkTheme = dark, dynamicColor = false) {
+        val useNavigationRail = LocalConfiguration.current.screenWidthDp >= 840
         val torrentInput = initialUrl.startsWith("magnet:", true) ||
                 initialUrl.startsWith("content:", true) ||
                 initialUrl.endsWith(".torrent", true)
 
         var destination by rememberSaveable {
             mutableStateOf(
-                if (torrentInput) Destination.TORRENTS
-                else if (initialUrl.isNotBlank()) Destination.RESOLVE
+                if (initialUrl.isNotBlank()) Destination.DISCOVER
                 else Destination.DOWNLOADS
             )
         }
@@ -90,6 +96,14 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
         var showDirectDownloadDialog by rememberSaveable { mutableStateOf(false) }
         var directDownloadInitialUrl by rememberSaveable { mutableStateOf("") }
         var downloadTargetItem by remember { mutableStateOf<ResolvedItem?>(null) }
+        var discoverTorrentMode by rememberSaveable { mutableStateOf(torrentInput) }
+
+        LaunchedEffect(initialUrl) {
+            if (initialUrl.isNotBlank()) {
+                discoverTorrentMode = torrentInput
+                destination = Destination.DISCOVER
+            }
+        }
 
         val snackbar = remember { SnackbarHostState() }
         LaunchedEffect(state.message) {
@@ -109,40 +123,10 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
                     ),
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(38.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Download,
-                                        null,
-                                        Modifier.size(22.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(12.dp))
                             Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("OmniDL", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                    Spacer(Modifier.width(6.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer
-                                    ) {
-                                        Text(
-                                            "PRO",
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
+                                Text(if (destination == Destination.DOWNLOADS) "OmniDL" else destination.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                                 Text(
-                                    destination.label,
+                                    if (destination == Destination.DOWNLOADS) "Transfers" else "OmniDL",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -150,44 +134,17 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
                         }
                     },
                     actions = {
-                        if (state.totalSpeedBytesPerSecond > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                                modifier = Modifier.padding(end = 6.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.ArrowDownward,
-                                        null,
-                                        Modifier.size(13.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.width(3.dp))
-                                    Text(
-                                        "${formatBytes(state.totalSpeedBytesPerSecond)}/s",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
                         if (destination == Destination.DOWNLOADS) {
                             FilledTonalIconButton(
                                 onClick = viewModel::pauseAll,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(Icons.Default.Pause, "Pause all", Modifier.size(18.dp))
                             }
                             Spacer(Modifier.width(6.dp))
                             FilledTonalIconButton(
                                 onClick = viewModel::resumeAll,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(Icons.Default.PlayArrow, "Resume all", Modifier.size(18.dp))
                             }
@@ -197,7 +154,7 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
                 )
             },
             bottomBar = {
-                NavigationBar(
+                if (!useNavigationRail) NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     tonalElevation = 8.dp
                 ) {
@@ -215,48 +172,58 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
                                     }
                                 }) {
                                     Icon(
-                                        when (item) {
-                                            Destination.DOWNLOADS -> Icons.Default.Download
-                                            Destination.RESOLVE -> Icons.Default.Link
-                                            Destination.TORRENTS -> Icons.Default.CloudDownload
-                                            Destination.EXTENSIONS -> Icons.Default.Extension
-                                            Destination.SETTINGS -> Icons.Default.Settings
-                                        },
+                                        destinationIcon(item),
                                         item.label
                                     )
                                 }
                             },
                             label = { Text(item.label, maxLines = 1, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
-                            alwaysShowLabel = false,
+                            alwaysShowLabel = true,
                         )
                     }
                 }
             },
             floatingActionButton = {
                 if (destination == Destination.DOWNLOADS) {
-                    FloatingActionButton(onClick = { showAddMenu = true }) {
+                    FloatingActionButton(onClick = { onRequestNotificationPermission(); showAddMenu = true }) {
                         Icon(Icons.Default.Add, "New download")
                     }
                 }
             },
             snackbarHost = { SnackbarHost(snackbar) },
         ) { padding ->
-            Box(Modifier.padding(padding).fillMaxSize()) {
-                when (destination) {
-                    Destination.DOWNLOADS -> DownloadsScreen(state, viewModel, onNewDownload = { showAddMenu = true })
-                    Destination.RESOLVE -> ResolveScreen(
-                        if (torrentInput) "" else initialUrl,
-                        state,
-                        viewModel,
-                        onOpenDirectDownload = { targetUrl ->
-                            directDownloadInitialUrl = targetUrl
-                            showDirectDownloadDialog = true
-                        },
-                        onOpenDownloadItem = { item ->
-                            downloadTargetItem = item
+            Row(Modifier.padding(padding).fillMaxSize()) {
+                if (useNavigationRail) {
+                    NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                        Spacer(Modifier.height(12.dp))
+                        Destination.entries.forEach { item ->
+                            NavigationRailItem(
+                                selected = destination == item,
+                                onClick = { destination = item },
+                                icon = { Icon(destinationIcon(item), item.label) },
+                                label = { Text(item.label) },
+                                alwaysShowLabel = true
+                            )
                         }
-                    )
-                    Destination.TORRENTS -> TorrentScreen(if (torrentInput) initialUrl else "", state, viewModel)
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                when (destination) {
+                    Destination.DOWNLOADS -> DownloadsScreen(state, viewModel, onNewDownload = { onRequestNotificationPermission(); showAddMenu = true })
+                    Destination.DISCOVER -> Column(Modifier.fillMaxSize()) {
+                        OmniSegmentedTabs(listOf("Link tools", "Torrent"), if (discoverTorrentMode) 1 else 0) { discoverTorrentMode = it == 1 }
+                        Spacer(Modifier.height(4.dp))
+                        Box(Modifier.weight(1f)) {
+                            if (discoverTorrentMode) TorrentScreen(if (torrentInput) initialUrl else "", state, viewModel)
+                            else ResolveScreen(
+                                if (torrentInput) "" else initialUrl,
+                                state,
+                                viewModel,
+                                onOpenDirectDownload = { targetUrl -> directDownloadInitialUrl = targetUrl; showDirectDownloadDialog = true },
+                                onOpenDownloadItem = { item -> downloadTargetItem = item }
+                            )
+                        }
+                    }
                     Destination.EXTENSIONS -> ExtensionsScreen(state, viewModel)
                     Destination.SETTINGS -> SettingsScreen(state, viewModel)
                 }
@@ -276,72 +243,38 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
 
                 // New Transfer Selection Dialog
                 if (showAddMenu) {
-                    AlertDialog(
-                        onDismissRequest = { showAddMenu = false },
-                        title = { Text("New Transfer") },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        showAddMenu = false
-                                        directDownloadInitialUrl = ""
-                                        showDirectDownloadDialog = true
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
-                                        Spacer(Modifier.width(14.dp))
-                                        Column {
-                                            Text("Direct HTTP / HTTPS Download", fontWeight = FontWeight.SemiBold)
-                                            Text("Files, APKs, videos, archives from a direct link", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val clipboardText = LocalClipboardManager.current.getText()?.text.orEmpty()
+                    val detectedLink = clipboardText.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) || it.startsWith("magnet:", true) }
+                    ModalBottomSheet(onDismissRequest = { showAddMenu = false }) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Add download", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("Choose a source. Advanced options stay available before the transfer starts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (detectedLink != null) {
+                                Surface(Modifier.fillMaxWidth().padding(vertical = 12.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .6f)) {
+                                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.ContentPaste, null, tint = MaterialTheme.colorScheme.primary)
+                                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                            Text("Link detected in clipboard", style = MaterialTheme.typography.labelLarge)
+                                            Text(detectedLink, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
+                                        TextButton({ showAddMenu = false; directDownloadInitialUrl = detectedLink; showDirectDownloadDialog = true }) { Text("Paste") }
                                     }
                                 }
-
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        showAddMenu = false
-                                        destination = Destination.RESOLVE
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Link, null, tint = MaterialTheme.colorScheme.primary)
-                                        Spacer(Modifier.width(14.dp))
-                                        Column {
-                                            Text("Resolve Webpage or Stream", fontWeight = FontWeight.SemiBold)
-                                            Text("Extract media streams or run userscript resolvers", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().clickable {
-                                        showAddMenu = false
-                                        destination = Destination.TORRENTS
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary)
-                                        Spacer(Modifier.width(14.dp))
-                                        Column {
-                                            Text("BitTorrent Transfer", fontWeight = FontWeight.SemiBold)
-                                            Text("Download from a magnet link or .torrent file", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
+                            } else Spacer(Modifier.height(12.dp))
+                            AddTransferRow(Icons.Default.Link, "Paste link", "Direct HTTP / HTTPS download") {
+                                showAddMenu = false; directDownloadInitialUrl = ""; showDirectDownloadDialog = true
                             }
-                        },
-                        confirmButton = {},
-                        dismissButton = {
-                            TextButton(onClick = { showAddMenu = false }) { Text("Cancel") }
+                            AddTransferRow(Icons.Default.Search, "Inspect link", "Headers, redirects, size and range support") {
+                                showAddMenu = false; discoverTorrentMode = false; destination = Destination.DISCOVER
+                            }
+                            AddTransferRow(Icons.Default.AutoAwesome, "Resolve webpage", "Use direct and userscript resolvers") {
+                                showAddMenu = false; discoverTorrentMode = false; destination = Destination.DISCOVER
+                            }
+                            AddTransferRow(Icons.Default.CloudDownload, "Torrent or magnet", "Inspect metadata before adding") {
+                                showAddMenu = false; discoverTorrentMode = true; destination = Destination.DISCOVER
+                            }
                         }
-                    )
+                    }
                 }
 
                 // Add Direct Download Dialog
@@ -363,8 +296,33 @@ fun OmniApp(initialUrl: String, viewModel: MainViewModel) {
                         onDismiss = { downloadTargetItem = null }
                     )
                 }
+                }
             }
         }
+    }
+}
+
+private fun destinationIcon(destination: Destination): ImageVector = when (destination) {
+    Destination.DOWNLOADS -> Icons.Default.Download
+    Destination.DISCOVER -> Icons.Default.Explore
+    Destination.EXTENSIONS -> Icons.Default.Extension
+    Destination.SETTINGS -> Icons.Default.Settings
+}
+
+@Composable
+private fun AddTransferRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(Modifier.size(40.dp), shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -373,72 +331,20 @@ private fun DownloadsScreen(state: MainUiState, vm: MainViewModel, onNewDownload
     val scope = rememberCoroutineScope()
     val pager = rememberPagerState { DownloadTab.entries.size }
     var query by rememberSaveable { mutableStateOf("") }
-    var selectedCategory by rememberSaveable { mutableStateOf("ALL") }
+    var confirmClearCompleted by rememberSaveable { mutableStateOf(false) }
 
-    Column {
+    Column(Modifier.fillMaxSize()) {
         DownloadOverview(state.tasks)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = {
-                if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Default.Close, "Clear search") }
-            },
-            placeholder = { Text("Search downloads…") },
-            singleLine = true,
-            shape = RoundedCornerShape(24.dp)
-        )
-
-        // Category Filter Chips
-        val categories = listOf(
-            "ALL" to "All",
-            "VIDEOS" to "Videos",
-            "AUDIO" to "Audio",
-            "ARCHIVES" to "Archives",
-            "APPS" to "Apps",
-            "DOCUMENTS" to "Docs",
-            "TORRENTS" to "Torrents"
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(categories) { (key, label) ->
-                FilterChip(
-                    selected = selectedCategory == key,
-                    onClick = { selectedCategory = key },
-                    label = { Text(label) },
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
+        OmniSearchField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+        val counts = DownloadTab.entries.map { tab -> state.tasks.count { matchesTab(it, tab) } }
+        OmniSegmentedTabs(DownloadTab.entries.map { it.label }, pager.currentPage, counts) { index ->
+            scope.launch { pager.animateScrollToPage(index) }
         }
-
-        ScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 12.dp, divider = {}) {
-            DownloadTab.entries.forEachIndexed { index, tab ->
-                val count = state.tasks.count { matchesTab(it, tab) }
-                Tab(
-                    selected = pager.currentPage == index,
-                    onClick = { scope.launch { pager.animateScrollToPage(index) } },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(tab.label, fontWeight = if (pager.currentPage == index) FontWeight.Bold else FontWeight.Normal)
-                            if (count > 0) {
-                                Spacer(Modifier.width(6.dp))
-                                Badge(
-                                    containerColor = if (pager.currentPage == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    contentColor = if (pager.currentPage == index) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                ) { Text(count.toString()) }
-                            }
-                        }
-                    }
-                )
-            }
-        }
+        Spacer(Modifier.height(6.dp))
 
         if (pager.currentPage == DownloadTab.COMPLETED.ordinal && state.tasks.any { it.status == DownloadStatus.COMPLETED }) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(vm::clearCompleted) {
+                TextButton({ confirmClearCompleted = true }) {
                     Icon(Icons.Default.CleaningServices, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Clear completed history")
@@ -450,13 +356,12 @@ private fun DownloadsScreen(state: MainUiState, vm: MainViewModel, onNewDownload
             val tab = DownloadTab.entries[page]
             val tasks = state.tasks.filter {
                 matchesTab(it, tab) &&
-                matchesCategory(it, selectedCategory) &&
-                (query.isBlank() || it.fileName.contains(query, true))
+                (query.isBlank() || it.fileName.contains(query, true) || it.source.value.contains(query, true))
             }
             if (tasks.isEmpty()) {
                 val (emptyTitle, emptySubtitle) = when {
-                    query.isNotBlank() -> "No matching downloads" to "Try adjusting your search query"
-                    selectedCategory != "ALL" -> "No $selectedCategory downloads" to "Filter returned zero results"
+                    query.isNotBlank() -> "No matching downloads" to "Search by filename or source host"
+                    tab == DownloadTab.ALL -> "No downloads yet" to "Paste a link, add a torrent, or share a URL to OmniDL."
                     tab == DownloadTab.ACTIVE -> "No active transfers" to "Active downloads and transfers will appear here"
                     tab == DownloadTab.QUEUED -> "Queue is empty" to "Waiting downloads will appear here"
                     tab == DownloadTab.COMPLETED -> "No finished downloads" to "Finished transfers will be organized here"
@@ -466,21 +371,30 @@ private fun DownloadsScreen(state: MainUiState, vm: MainViewModel, onNewDownload
                     title = emptyTitle,
                     subtitle = emptySubtitle,
                     icon = when (tab) {
+                        DownloadTab.ALL -> Icons.Default.Download
                         DownloadTab.ACTIVE -> Icons.Default.Downloading
                         DownloadTab.QUEUED -> Icons.Default.Schedule
                         DownloadTab.COMPLETED -> Icons.Default.CheckCircle
                         DownloadTab.FAILED -> Icons.Default.ErrorOutline
                     },
-                    actionLabel = if (tab == DownloadTab.ACTIVE || tab == DownloadTab.QUEUED) "New Transfer" else null,
-                    onAction = if (tab == DownloadTab.ACTIVE || tab == DownloadTab.QUEUED) onNewDownload else null
+                    actionLabel = if (tab in setOf(DownloadTab.ALL, DownloadTab.ACTIVE, DownloadTab.QUEUED)) "Add download" else null,
+                    onAction = if (tab in setOf(DownloadTab.ALL, DownloadTab.ACTIVE, DownloadTab.QUEUED)) onNewDownload else null
                 )
             } else {
-                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(tasks, key = { it.id }) { DownloadCard(it, vm) }
+                LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(tasks, key = { it.id }, contentType = { it.status }) { DownloadCard(it, vm) }
                 }
             }
         }
     }
+    if (confirmClearCompleted) AlertDialog(
+        onDismissRequest = { confirmClearCompleted = false },
+        icon = { Icon(Icons.Default.CleaningServices, null) },
+        title = { Text("Clear completed history?") },
+        text = { Text("Completed entries will be removed from OmniDL. Downloaded files will remain on your device.") },
+        confirmButton = { TextButton({ vm.clearCompleted(); confirmClearCompleted = false }) { Text("Clear") } },
+        dismissButton = { TextButton({ confirmClearCompleted = false }) { Text("Keep history") } }
+    )
 }
 
 @Composable
@@ -490,55 +404,14 @@ private fun DownloadOverview(tasks: List<DownloadTask>) {
     val queued = tasks.count { it.status == DownloadStatus.WAITING }
     val completed = tasks.count { it.status == DownloadStatus.COMPLETED }
 
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Transfer Hub", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (totalSpeed > 0) "Engine downloading at high speed" else "Idle • Queue ready",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (totalSpeed > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Speed, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "${formatBytes(totalSpeed)}/s",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                OverviewMetric("Active", active, Icons.Default.Downloading, MaterialTheme.colorScheme.primary)
-                OverviewMetric("Queued", queued, Icons.Default.Schedule, MaterialTheme.colorScheme.tertiary)
-                OverviewMetric("Done", completed, Icons.Default.CheckCircle, OmniMint)
-            }
-        }
+        OmniStat("CURRENT SPEED", if (totalSpeed > 0) "↓ ${formatBytes(totalSpeed)}/s" else "Idle", Modifier.weight(1.6f), if (totalSpeed > 0) OmniSpeedCyan else MaterialTheme.colorScheme.onSurfaceVariant)
+        OmniStat("ACTIVE", active.toString(), Modifier.weight(.7f))
+        OmniStat("QUEUED", queued.toString(), Modifier.weight(.7f), if (queued > 0) OmniWarning else MaterialTheme.colorScheme.onSurface)
+        OmniStat("DONE", completed.toString(), Modifier.weight(.7f), OmniMint)
     }
 }
 
@@ -562,6 +435,7 @@ private fun RowScope.OverviewMetric(label: String, value: Int, icon: ImageVector
 }
 
 private fun matchesTab(task: DownloadTask, tab: DownloadTab) = when (tab) {
+    DownloadTab.ALL -> task.status != DownloadStatus.CANCELLED
     DownloadTab.ACTIVE -> task.status in setOf(DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING, DownloadStatus.PAUSED)
     DownloadTab.QUEUED -> task.status == DownloadStatus.WAITING
     DownloadTab.COMPLETED -> task.status == DownloadStatus.COMPLETED
@@ -651,243 +525,61 @@ private fun shareDownloadedFile(context: Context, task: DownloadTask) {
 @Composable
 private fun DownloadCard(task: DownloadTask, vm: MainViewModel) {
     val context = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val (catIcon, catColor) = remember(task) { categoryIconAndColor(task) }
-    val ext = remember(task.fileName) { task.fileName.substringAfterLast('.', "").uppercase().take(5) }
+    OmniDownloadRow(
+        task = task,
+        formatBytes = ::formatBytes,
+        formatDuration = ::formatDuration,
+        onClick = { showDetails = true },
+        onMore = { showDetails = true },
+        onPrimaryAction = {
+            when (task.status) {
+                DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING -> vm.pause(task.id)
+                DownloadStatus.PAUSED, DownloadStatus.FAILED -> vm.resume(task.id)
+                DownloadStatus.COMPLETED -> openDownloadedFile(context, task)
+                else -> Unit
+            }
+        }
+    )
 
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    if (showDetails) ModalBottomSheet(onDismissRequest = { showDetails = false }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = catColor.copy(alpha = 0.14f),
-                    modifier = Modifier.size(46.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(catIcon, null, tint = catColor, modifier = Modifier.size(24.dp))
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (ext.isNotBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.padding(end = 6.dp)
-                            ) {
-                                Text(
-                                    ext,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Text(
-                            task.fileName,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                    }
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = statusColor(task.status).copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                statusLabel(task.status),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = statusColor(task.status)
-                            )
-                        }
-                        if (task.status == DownloadStatus.DOWNLOADING && task.speedBytesPerSecond > 0) {
-                            Text(
-                                "↓ ${formatBytes(task.speedBytesPerSecond)}/s",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    Text(task.fileName, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(5.dp)); OmniStatusBadge(task.status)
                 }
-                Box {
-                    IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, "More actions") }
-                    DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Copy source URL") },
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                cm?.setPrimaryClip(ClipData.newPlainText("URL", task.source.value))
-                                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
-                                menu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (task.status == DownloadStatus.COMPLETED) "Remove from history" else "Delete download") },
-                            onClick = { menu = false; confirmDelete = true },
-                            leadingIcon = { Icon(Icons.Default.DeleteOutline, null) }
-                        )
-                    }
-                }
+                IconButton({ showDetails = false }) { Icon(Icons.Default.Close, "Close") }
             }
-
-            if (task.totalBytes > 0) {
-                LinearProgressIndicator(
-                    progress = { (task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${formatBytes(task.downloadedBytes)} of ${formatBytes(task.totalBytes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            "${(task.downloadedBytes * 100 / task.totalBytes).coerceIn(0, 100)}%",
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-                if (task.status == DownloadStatus.DOWNLOADING) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        task.etaSeconds?.let {
-                            Text("ETA ~ ${formatDuration(it)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text("${task.connections} streams", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            } else if (task.status in setOf(DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING)) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
-                Text("Connecting and preparing streams…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (task.totalBytes > 0) OmniDownloadProgress((task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f), task.status, Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth()) {
+                OmniStat("DOWNLOADED", formatBytes(task.downloadedBytes), Modifier.weight(1f))
+                OmniStat("TOTAL", formatBytes(task.totalBytes), Modifier.weight(1f))
+                OmniStat("CONNECTIONS", task.connections.toString(), Modifier.weight(1f))
             }
-
-            task.errorMessage?.let {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(10.dp)
-                    )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text("Source", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(task.source.value, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text("Destination", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(task.destinationTreeUri, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            task.sha256?.let { Text("SHA-256  $it", style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (task.status) {
+                    DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING -> Button({ vm.pause(task.id); showDetails = false }, Modifier.weight(1f)) { Icon(Icons.Default.Pause, null); Spacer(Modifier.width(6.dp)); Text("Pause") }
+                    DownloadStatus.PAUSED, DownloadStatus.FAILED -> Button({ vm.resume(task.id); showDetails = false }, Modifier.weight(1f)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(if (task.status == DownloadStatus.FAILED) "Retry" else "Resume") }
+                    DownloadStatus.COMPLETED -> Button({ openDownloadedFile(context, task) }, Modifier.weight(1f)) { Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(6.dp)); Text("Open") }
+                    else -> Spacer(Modifier.weight(1f))
                 }
+                OutlinedButton({ shareDownloadedFile(context, task) }, Modifier.weight(1f)) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(6.dp)); Text("Share") }
             }
-
-            // Expandable details drawer
-            if (expanded) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Destination: ${task.destinationTreeUri.takeLast(60)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Source: ${task.source.value.take(70)}…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        task.sha256?.let { Text("SHA-256: ${it.take(24)}…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    }
-                }
-            }
-
-            // Primary Action Buttons
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = { expanded = !expanded }) {
-                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (expanded) "Less" else "Details", style = MaterialTheme.typography.labelMedium)
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when (task.status) {
-                        DownloadStatus.COMPLETED -> {
-                            OutlinedButton(
-                                onClick = { shareDownloadedFile(context, task) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Share, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Share")
-                            }
-                            Button(
-                                onClick = { openDownloadedFile(context, task) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Open")
-                            }
-                        }
-                        DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING -> {
-                            OutlinedButton(
-                                onClick = { vm.cancel(task.id) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Close, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Cancel")
-                            }
-                            FilledTonalButton(
-                                onClick = { vm.pause(task.id) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Pause, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Pause")
-                            }
-                        }
-                        DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
-                            OutlinedButton(
-                                onClick = { vm.cancel(task.id) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Close, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Cancel")
-                            }
-                            Button(
-                                onClick = { vm.resume(task.id) },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(if (task.status == DownloadStatus.FAILED) "Retry" else "Resume")
-                            }
-                        }
-                        else -> Unit
-                    }
-                }
+            TextButton({
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                cm?.setPrimaryClip(ClipData.newPlainText("URL", task.source.value))
+                Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+            }, Modifier.fillMaxWidth()) { Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(6.dp)); Text("Copy source URL") }
+            TextButton({ showDetails = false; confirmDelete = true }, Modifier.fillMaxWidth(), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Icon(Icons.Default.DeleteOutline, null); Spacer(Modifier.width(6.dp)); Text(if (task.status == DownloadStatus.COMPLETED) "Remove from history" else "Delete transfer")
             }
         }
     }
@@ -2098,14 +1790,17 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
 
 @Composable
 private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateInfo?, vm: MainViewModel) {
-    ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    var confirmRemove by rememberSaveable(script.id) { mutableStateOf(false) }
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(script.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("v${script.version}${script.category?.let { " • $it" }.orEmpty()}", style = MaterialTheme.typography.labelSmall)
+                Surface(Modifier.size(38.dp), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Extension, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
                 }
-                if (script.builtIn) AssistChip(onClick = {}, label = { Text("Built-in") })
+                Column(Modifier.weight(1f)) {
+                    Text(script.name, Modifier.padding(start = 11.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${script.category ?: "Resolver"}  •  v${script.version}${if (script.builtIn) "  •  Built-in" else ""}", Modifier.padding(start = 11.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Switch(checked = script.enabled, onCheckedChange = { vm.setScriptEnabled(script.id, it) })
             }
             script.description?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -2117,9 +1812,9 @@ private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateIn
 
             // Show update badge and button if an update is available
             update?.let { up ->
-                Card(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .5f),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Row(
@@ -2143,7 +1838,7 @@ private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateIn
             }
 
             if (!script.builtIn) {
-                TextButton(onClick = { vm.uninstallScript(script.id) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                TextButton(onClick = { confirmRemove = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                     Icon(Icons.Default.DeleteOutline, null)
                     Spacer(Modifier.width(6.dp))
                     Text("Uninstall")
@@ -2151,6 +1846,14 @@ private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateIn
             }
         }
     }
+    if (confirmRemove) AlertDialog(
+        onDismissRequest = { confirmRemove = false },
+        icon = { Icon(Icons.Default.ExtensionOff, null) },
+        title = { Text("Remove ${script.name}?") },
+        text = { Text("The extension and its granted resolver access will be removed from OmniDL.") },
+        confirmButton = { TextButton({ vm.uninstallScript(script.id); confirmRemove = false }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Remove") } },
+        dismissButton = { TextButton({ confirmRemove = false }) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -2333,20 +2036,23 @@ private fun SettingsScreen(state: MainUiState, vm: MainViewModel) {
             vm.setDefaultTree(it.toString())
         }
     }
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Downloads", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SettingSlider("Simultaneous downloads", state.settings.maxConcurrent, 1..8, vm::setMax)
-                SettingSlider("HTTP connections per download", state.settings.connections, 1..16, vm::setConnections)
-                SettingSwitch("Eco mode", "Lower memory and battery use", state.settings.ecoMode, vm::setEcoMode)
-                SettingSwitch("Wi-Fi only", "Avoid mobile data by default", state.settings.wifiOnly, vm::setWifiOnly)
-                SettingSwitch("Auto-resume", "Continue interrupted transfers", state.settings.autoResume, vm::setAutoResume)
-            }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OmniSectionHeader("Downloads")
+        Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            SettingSlider("Concurrent downloads", state.settings.maxConcurrent, 1..8, vm::setMax)
+            SettingSlider("Connections per download", state.settings.connections, 1..16, vm::setConnections)
+            SettingSwitch("Auto-resume", "Continue interrupted transfers", state.settings.autoResume, vm::setAutoResume)
         }
-        Text("Application updates", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        OmniSectionHeader("Network")
+        SettingSwitch("Wi-Fi only", "Avoid mobile data for new transfers", state.settings.wifiOnly, vm::setWifiOnly)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        OmniSectionHeader("Advanced")
+        SettingSlider("Retry attempts", state.settings.retries, 0..10, vm::setRetries)
+        SettingSwitch("Eco mode", "Reduce concurrent work and battery use", state.settings.ecoMode, vm::setEcoMode)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        OmniSectionHeader("Updates")
+        Column(Modifier.fillMaxWidth()) {
                 SettingSwitch("Automatic checks", "Check GitHub Releases daily", state.settings.automaticUpdateChecks, vm::setAutomaticUpdateChecks)
                 OutlinedButton(vm::checkForUpdates, Modifier.fillMaxWidth(), enabled = !state.isCheckingForUpdates) {
                     if (state.isCheckingForUpdates) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -2354,11 +2060,10 @@ private fun SettingsScreen(state: MainUiState, vm: MainViewModel) {
                     Spacer(Modifier.width(8.dp))
                     Text(if (state.isCheckingForUpdates) "Checking…" else "Check now")
                 }
-            }
         }
         state.availableUpdate?.let { update ->
             val progress = state.updateProgress
-            ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -2456,23 +2161,19 @@ private fun SettingsScreen(state: MainUiState, vm: MainViewModel) {
                 }
             }
         }
-        Text("Storage", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        OmniSectionHeader("Storage")
         FolderButton(state.settings.defaultTreeUri, { treePicker.launch(null) })
-        Text("Appearance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("SYSTEM", "LIGHT", "DARK").forEachIndexed { i, value ->
-                SegmentedButton(
-                    selected = state.settings.theme == value,
-                    onClick = { vm.setTheme(value) },
-                    shape = SegmentedButtonDefaults.itemShape(i, 3),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(value.lowercase().replaceFirstChar { it.titlecase() })
-                }
-            }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        OmniSectionHeader("Appearance")
+        OmniSegmentedTabs(listOf("System", "Light", "Dark"), listOf("SYSTEM", "LIGHT", "DARK").indexOf(state.settings.theme).coerceAtLeast(0)) {
+            vm.setTheme(listOf("SYSTEM", "LIGHT", "DARK")[it])
         }
         HorizontalDivider()
-        Text("Omni Downloader Pro • v${BuildConfig.VERSION_NAME} • All Engines Active", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OmniSectionHeader("About")
+        Text("OmniDL  •  v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text("One downloader. Every source.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -2525,7 +2226,7 @@ private fun FolderButton(folder: String, onClick: () -> Unit) {
 
 @Composable
 private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    ListItem(headlineContent = { Text(title) }, supportingContent = { Text(subtitle) }, trailingContent = { Switch(checked, onChange) })
+    OmniSettingRow(Icons.Default.Tune, title, subtitle, trailing = { Switch(checked, onChange) })
 }
 
 @Composable
@@ -2560,16 +2261,15 @@ private fun EmptyState(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(82.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                modifier = Modifier.size(58.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         icon,
                         null,
-                        Modifier.size(38.dp),
+                        Modifier.size(27.dp),
                         tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                     )
                 }

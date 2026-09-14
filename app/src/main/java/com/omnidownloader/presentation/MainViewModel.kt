@@ -497,6 +497,7 @@ class MainViewModel @Inject constructor(
     fun setConnections(value: Int) { viewModelScope.launch { settingsRepository.setConnections(value) } }
     fun setWifiOnly(value: Boolean) { viewModelScope.launch { settingsRepository.setWifiOnly(value) } }
     fun setAutoResume(value: Boolean) { viewModelScope.launch { settingsRepository.setAutoResume(value) } }
+    fun setRetries(value: Int) { viewModelScope.launch { settingsRepository.setRetries(value) } }
     fun setTheme(value: String) { viewModelScope.launch { settingsRepository.setTheme(value) } }
     fun setEcoMode(value: Boolean) { viewModelScope.launch { settingsRepository.setEcoMode(value) } }
     fun setAutomaticUpdateChecks(value: Boolean) { viewModelScope.launch { settingsRepository.setAutomaticUpdateChecks(value) } }

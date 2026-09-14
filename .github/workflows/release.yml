@@ -26,33 +26,37 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/omnidl-release.jks"
-            echo "has_keystore=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_keystore=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Build APKs
+          test -n "$KEYSTORE_BASE64" || { echo "ANDROID_KEYSTORE_BASE64 is not configured"; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo "ANDROID_KEYSTORE_PASSWORD is not configured"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "ANDROID_KEY_ALIAS is not configured"; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "ANDROID_KEY_PASSWORD is not configured"; exit 1; }
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/omnidl-release.jks"
+          test -s "$RUNNER_TEMP/omnidl-release.jks"
+      - name: Validate release version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          APP_VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)"
+          test "$TAG_VERSION" = "$APP_VERSION" || { echo "Tag $TAG_VERSION does not match app version $APP_VERSION"; exit 1; }
+      - name: Test and build signed APKs
         env:
           OMNIDL_KEYSTORE_PATH: ${{ runner.temp }}/omnidl-release.jks
           OMNIDL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           OMNIDL_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           OMNIDL_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ "${{ steps.keystore.outputs.has_keystore }}" = "true" ]; then
-            ./gradlew assembleRelease
-          else
-            ./gradlew assembleDebug
-            mkdir -p app/build/outputs/apk/release
-            for f in app/build/outputs/apk/debug/*.apk; do
-              dest="app/build/outputs/apk/release/$(basename "$f" | sed 's/-debug/-release/')"
-              cp "$f" "$dest"
-            done
+          ./gradlew testDebugUnitTest lintVitalRelease assembleRelease
+          if find app/build/outputs/apk/release -name '*-unsigned.apk' | grep -q .; then
+            echo "Unsigned APK output detected; refusing to publish"
+            exit 1
           fi
+          cd app/build/outputs/apk/release
+          sha256sum *.apk > SHA256SUMS.txt
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: OmniDL ${{ github.ref_name }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*-release.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt

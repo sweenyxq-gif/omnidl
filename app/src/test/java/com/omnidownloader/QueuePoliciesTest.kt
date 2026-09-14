@@ -34,4 +34,13 @@ class QueuePoliciesTest {
         )
         assertEquals(1, QueueScheduler.next(torrents, 0, 3, wifi = true, globalWifiOnly = false).size)
     }
+    @Test fun networkPolicyStopsActiveTransfersBeforeMobileFallback() {
+        val active = task("active", 1).copy(status = DownloadStatus.DOWNLOADING)
+        val wifiOnly = active.copy(id = "wifi", wifiOnly = true)
+        assertTrue(NetworkTransferPolicy.mustPause(active, connected = false, wifi = false, globalWifiOnly = false))
+        assertTrue(NetworkTransferPolicy.mustPause(wifiOnly, connected = true, wifi = false, globalWifiOnly = false))
+        assertTrue(NetworkTransferPolicy.mustPause(active, connected = true, wifi = false, globalWifiOnly = true))
+        assertFalse(NetworkTransferPolicy.mustPause(active, connected = true, wifi = true, globalWifiOnly = true))
+        assertFalse(NetworkTransferPolicy.mustPause(active.copy(status = DownloadStatus.WAITING), connected = false, wifi = false, globalWifiOnly = true))
+    }
 }

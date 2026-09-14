@@ -18,7 +18,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.OmniDownloader">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -45,9 +45,6 @@
         <service android:name=".service.DownloadForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
         <receiver android:name=".service.BootReceiver" android:enabled="true" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
-        </receiver>
-        <receiver android:name=".service.UpdateDownloadReceiver" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.DOWNLOAD_COMPLETE" /></intent-filter>
         </receiver>
         <receiver android:name=".service.UpdateActionReceiver" android:exported="false" />
         <provider

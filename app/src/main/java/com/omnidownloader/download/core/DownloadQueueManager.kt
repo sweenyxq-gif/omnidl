@@ -22,6 +22,7 @@ class DownloadQueueManager @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val active = mutableMapOf<String, Job>()
+    private val networkPaused = mutableSetOf<String>()
 
     init {
         scope.launch {
@@ -29,9 +30,26 @@ class DownloadQueueManager @Inject constructor(
                 QueueInputs(tasks, prefs, network, savingPower)
             }.distinctUntilChanged().collect { (tasks, prefs, network, savingPower) ->
                     synchronized(active) { active.entries.removeAll { it.value.isCompleted } }
-                    if (!network.connected) {
-                        tasks.filter { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RESOLVING }.forEach { pause(it.id) }
+                    val blocked = tasks.filter {
+                        NetworkTransferPolicy.mustPause(it, network.connected, network.wifi, prefs.wifiOnly)
+                    }
+                    if (blocked.isNotEmpty()) {
+                        blocked.forEach { task ->
+                            networkPaused += task.id
+                            router.engineFor(task.source)?.pause(task.id)
+                        }
                         return@collect
+                    }
+                    if (network.connected && (network.wifi || !prefs.wifiOnly) && networkPaused.isNotEmpty()) {
+                        val taskById = tasks.associateBy { it.id }
+                        val resumable = networkPaused.filter { id ->
+                            val task = taskById[id]
+                            task != null && task.status == DownloadStatus.PAUSED &&
+                                (network.wifi || !task.wifiOnly)
+                        }
+                        if (prefs.autoResume) resumable.forEach { repository.setStatus(it, DownloadStatus.WAITING) }
+                        networkPaused.removeAll(resumable.toSet())
+                        if (!prefs.autoResume) networkPaused.clear()
                     }
                     val maxConcurrent = PerformancePolicy.maxConcurrent(prefs.maxConcurrent, prefs.ecoMode, savingPower)
                     val slots = maxConcurrent - synchronized(active) { active.size }

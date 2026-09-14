@@ -24,7 +24,7 @@ class RoomDownloadRepository @Inject constructor(private val dao: DownloadDao) :
 }
 
 private fun TaskWithHeaders.toDomain(): DownloadTask {
-    val source = when (SourceType.valueOf(task.sourceType)) {
+    val source = when (enumOrDefault(task.sourceType, SourceType.HTTP)) {
         SourceType.HTTP -> DownloadSource.Http(task.sourceValue)
         SourceType.TORRENT_FILE -> DownloadSource.TorrentFile(task.sourceValue)
         SourceType.MAGNET -> DownloadSource.Magnet(task.sourceValue)
@@ -34,11 +34,14 @@ private fun TaskWithHeaders.toDomain(): DownloadTask {
         SourceType.SFTP -> DownloadSource.Sftp(task.sourceValue)
     }
     return DownloadTask(task.id, source, task.fileName, task.destinationTreeUri, task.mimeType, task.totalBytes, task.downloadedBytes,
-        DownloadStatus.valueOf(task.status), task.connections, task.priority, headers.associate { it.name to it.value }, task.sha256,
-        task.wifiOnly, task.speedLimitBytesPerSecond, DownloadCategory.valueOf(task.category), task.createdAt,
+        enumOrDefault(task.status, DownloadStatus.FAILED), task.connections, task.priority, headers.associate { it.name to it.value }, task.sha256,
+        task.wifiOnly, task.speedLimitBytesPerSecond, enumOrDefault(task.category, DownloadCategory.OTHER), task.createdAt,
         task.errorCode?.let { runCatching { DownloadErrorCode.valueOf(it) }.getOrNull() }, task.errorMessage,
         task.resolvedUrl, task.etag, task.lastModified, task.speedBytesPerSecond, task.etaSeconds)
 }
+
+private inline fun <reified T : Enum<T>> enumOrDefault(value: String, fallback: T): T =
+    enumValues<T>().firstOrNull { it.name == value } ?: fallback
 
 private fun DownloadTask.toEntity(): DownloadTaskEntity {
     val type = when (source) {

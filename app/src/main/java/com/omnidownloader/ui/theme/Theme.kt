@@ -7,8 +7,19 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
+
+val OmniShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+)
 
 val OmniDarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
@@ -92,6 +103,7 @@ fun OmniTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = OmniTypography,
+        shapes = OmniShapes,
         content = content
     )
 }

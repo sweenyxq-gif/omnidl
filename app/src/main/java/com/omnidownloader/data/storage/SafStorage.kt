@@ -45,7 +45,9 @@ class SafStorage @Inject constructor(@ApplicationContext private val context: Co
         } else {
             val name = uniqueName(root, requestedName)
             val target = root.createFile("application/octet-stream", name) ?: throw java.io.IOException("Could not create destination file")
-            context.contentResolver.openOutputStream(target.uri, "wt")!!.use { output -> payload.inputStream().buffered().use { it.copyTo(output) } }
+            val output = context.contentResolver.openOutputStream(target.uri, "wt")
+                ?: throw java.io.IOException("Could not open destination file")
+            output.use { stream -> payload.inputStream().buffered().use { it.copyTo(stream) } }
             target.uri
         }
     }
@@ -56,7 +58,9 @@ class SafStorage @Inject constructor(@ApplicationContext private val context: Co
             source.listFiles()?.forEach { copyInto(it, child) }
         } else {
             val child = parent.createFile("application/octet-stream", source.name) ?: throw java.io.IOException("Could not create ${source.name}")
-            context.contentResolver.openOutputStream(child.uri, "wt")!!.use { output -> source.inputStream().buffered().use { it.copyTo(output) } }
+            val output = context.contentResolver.openOutputStream(child.uri, "wt")
+                ?: throw java.io.IOException("Could not open ${source.name}")
+            output.use { stream -> source.inputStream().buffered().use { it.copyTo(stream) } }
         }
     }
 

@@ -17,6 +17,12 @@ object QueueScheduler {
         this is com.omnidownloader.domain.model.DownloadSource.Magnet || this is com.omnidownloader.domain.model.DownloadSource.TorrentFile
 }
 
+object NetworkTransferPolicy {
+    fun mustPause(task: DownloadTask, connected: Boolean, wifi: Boolean, globalWifiOnly: Boolean): Boolean =
+        task.status in setOf(DownloadStatus.DOWNLOADING, DownloadStatus.RESOLVING) &&
+            (!connected || (!wifi && (globalWifiOnly || task.wifiOnly)))
+}
+
 object PerformancePolicy {
     fun maxConcurrent(configured: Int, ecoMode: Boolean, powerSaveMode: Boolean): Int =
         if (ecoMode || powerSaveMode) 1 else configured.coerceIn(1, 8)
