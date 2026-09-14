@@ -7,6 +7,8 @@ import com.omnidownloader.domain.userscript.UserscriptMetadata
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,6 +16,7 @@ import javax.inject.Singleton
 class UserscriptResolver @Inject constructor(
     private val engine: UserscriptEngine,
     private val storage: UserscriptStorage,
+    @ApplicationContext private val context: Context? = null
 ) : Resolver {
     override val id: String = "userscript_resolver"
     override val priority: Int = 90
@@ -22,7 +25,31 @@ class UserscriptResolver @Inject constructor(
     val installedScripts: StateFlow<Map<String, UserscriptMetadata>> = _installedScripts.asStateFlow()
 
     init {
-        _installedScripts.value = storage.loadScripts().associateBy { it.id }
+        val loaded = storage.loadScripts().associateBy { it.id }.toMutableMap()
+
+        // Pre-load bundled userscripts from assets so all curated resolvers work out of the box
+        if (context != null) {
+            try {
+                val files = context.assets.list("userscripts") ?: emptyArray()
+                for (file in files) {
+                    if (file.endsWith(".user.js")) {
+                        try {
+                            val scriptText = context.assets.open("userscripts/$file").bufferedReader().use { it.readText() }
+                            UserscriptMetadataParser.parse(scriptText)?.let { parsed ->
+                                if (!loaded.containsKey(parsed.id)) {
+                                    loaded[parsed.id] = parsed
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // ignore individual script failure
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // ignore assets list failure
+            }
+        }
+
         // Pre-load a sample built-in resolver: GitHub Release direct artifact resolver
         val sampleGithubResolver = """
             // ==UserScript==
@@ -64,8 +91,10 @@ class UserscriptResolver @Inject constructor(
             }
         """.trimIndent()
         UserscriptMetadataParser.parse(sampleGithubResolver)?.copy(builtIn = true)?.let { builtIn ->
-            _installedScripts.value = _installedScripts.value + (builtIn.id to builtIn)
+            loaded[builtIn.id] = builtIn
         }
+
+        _installedScripts.value = loaded
     }
 
     fun registerScript(rawScript: String): UserscriptMetadata? {

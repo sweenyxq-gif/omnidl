@@ -169,11 +169,11 @@ class ResolverAndInspectorTest {
             server.shutdown()
         }
     }
-
     @Test
     fun resolverManagerChainsResolversByPriority() = runTest {
         val manager = ResolverManager(
             directUrlResolver = DirectUrlResolver(SourceDetector()),
+            youTubeResolver = com.omnidownloader.data.resolver.YouTubeResolver(OkHttpClient()),
             userscriptResolver = UserscriptResolver(object : UserscriptEngine {
                 override suspend fun execute(metadata: UserscriptMetadata, targetUrl: String) =
                     UserscriptExecutionResult(success = false)
@@ -186,5 +186,95 @@ class ResolverAndInspectorTest {
         val directRes = manager.resolve("https://example.com/test.zip")
         assertTrue(directRes is ResolveResult.Success)
         assertEquals("test.zip", (directRes as ResolveResult.Success).results.first().filename)
+    }
+
+    @Test
+    fun youTubeResolverDetectsYouTubeUrls() {
+        val resolver = com.omnidownloader.data.resolver.YouTubeResolver(OkHttpClient())
+
+        assertTrue(resolver.canHandle("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+        assertTrue(resolver.canHandle("https://youtu.be/dQw4w9WgXcQ"))
+        assertTrue(resolver.canHandle("https://www.youtube.com/shorts/dQw4w9WgXcQ"))
+        assertTrue(resolver.canHandle("https://m.youtube.com/watch?v=dQw4w9WgXcQ&feature=share"))
+        assertTrue(resolver.canHandle("https://youtube.com/embed/dQw4w9WgXcQ"))
+
+        assertFalse(resolver.canHandle("https://example.com/video.mp4"))
+        assertFalse(resolver.canHandle("https://www.youtube.com/feed/subscriptions"))
+    }
+
+    @Test
+    fun youTubeResolverParsesStreamDataSuccessfully() = runTest {
+        val server = MockWebServer()
+        val sampleResponse = """
+            {
+              "playabilityStatus": { "status": "OK" },
+              "videoDetails": {
+                "videoId": "dQw4w9WgXcQ",
+                "title": "Rick Astley - Never Gonna Give You Up",
+                "author": "Rick Astley",
+                "lengthSeconds": "213"
+              },
+              "streamingData": {
+                "formats": [
+                  {
+                    "itag": 22,
+                    "url": "https://googlevideo.example.com/stream720.mp4",
+                    "mimeType": "video/mp4; codecs=\"avc1.64001F, mp4a.40.2\"",
+                    "qualityLabel": "720p",
+                    "contentLength": "15485760"
+                  }
+                ],
+                "adaptiveFormats": [
+                  {
+                    "itag": 137,
+                    "url": "https://googlevideo.example.com/stream1080.mp4",
+                    "mimeType": "video/mp4; codecs=\"avc1.640028\"",
+                    "qualityLabel": "1080p",
+                    "contentLength": "45000000"
+                  },
+                  {
+                    "itag": 140,
+                    "url": "https://googlevideo.example.com/stream_audio.m4a",
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "audioQuality": "AUDIO_QUALITY_MEDIUM",
+                    "bitrate": 128000,
+                    "contentLength": "3500000"
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(sampleResponse))
+        server.start()
+
+        try {
+            val resolver = com.omnidownloader.data.resolver.YouTubeResolver(
+                client = OkHttpClient(),
+                endpointUrl = server.url("/player").toString()
+            )
+            assertTrue(resolver.canHandle("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+
+            val res = resolver.resolve(ResolveRequest("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+            assertTrue(res is ResolveResult.Success)
+            val success = res as ResolveResult.Success
+            assertEquals(3, success.results.size)
+
+            val muxed = success.results[0]
+            assertEquals("720p", muxed.quality)
+            assertEquals("https://googlevideo.example.com/stream720.mp4", muxed.url)
+            assertTrue(muxed.filename!!.contains("Rick Astley"))
+            assertEquals(15485760L, muxed.size)
+
+            val video1080 = success.results[1]
+            assertEquals("1080p", video1080.quality)
+            assertEquals(45000000L, video1080.size)
+
+            val audio = success.results[2]
+            assertEquals("128k", audio.quality)
+            assertEquals(3500000L, audio.size)
+        } finally {
+            server.shutdown()
+        }
     }
 }

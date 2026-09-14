@@ -12,12 +12,14 @@ import javax.inject.Singleton
 @Singleton
 class ResolverManager @Inject constructor(
     private val directUrlResolver: DirectUrlResolver,
+    private val youTubeResolver: YouTubeResolver,
     private val userscriptResolver: UserscriptResolver,
     private val redirectResolver: RedirectResolver,
     private val genericWebpageResolver: GenericWebpageResolver
 ) {
     private val builtInResolvers: List<Resolver> = listOf(
         directUrlResolver,
+        youTubeResolver,
         userscriptResolver,
         redirectResolver,
         genericWebpageResolver

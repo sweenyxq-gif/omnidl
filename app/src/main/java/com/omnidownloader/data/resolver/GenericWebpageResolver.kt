@@ -125,40 +125,57 @@ class GenericWebpageResolver @Inject constructor(
         }
 
         // 1. OpenGraph & Twitter video/audio tags
-        val ogVideoRegex = Regex("""<meta\s+[^>]*property=["'](?:og:video|og:video:url)["'][^>]*content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val ogVideoRegex = Regex("""<meta\s+[^>]*property=["'](?:og:video|og:video:url|og:video:secure_url)["'][^>]*content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         ogVideoRegex.findAll(html).forEach { match ->
             addCandidate(match.groupValues[1], "OpenGraph Video")
+        }
+        val twitterStreamRegex = Regex("""<meta\s+[^>]*name=["'](?:twitter:player:stream|twitter:player:stream:content_type)["'][^>]*content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        twitterStreamRegex.findAll(html).forEach { match ->
+            addCandidate(match.groupValues[1], "Twitter Video Stream")
         }
         val ogAudioRegex = Regex("""<meta\s+[^>]*property=["'](?:og:audio|og:audio:url)["'][^>]*content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         ogAudioRegex.findAll(html).forEach { match ->
             addCandidate(match.groupValues[1], "OpenGraph Audio")
         }
 
-        // 2. HTML5 <video src="..."> and <video><source src="...">
-        val videoSrcRegex = Regex("""<video[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        // 2. HTML5 <video src="...">, <video data-src="..."> and <source>
+        val videoSrcRegex = Regex("""<video[^>]+(?:src|data-src)=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         videoSrcRegex.findAll(html).forEach { match ->
             addCandidate(match.groupValues[1], "HTML5 Video")
         }
 
-        val audioSrcRegex = Regex("""<audio[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val audioSrcRegex = Regex("""<audio[^>]+(?:src|data-src)=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         audioSrcRegex.findAll(html).forEach { match ->
             addCandidate(match.groupValues[1], "HTML5 Audio")
         }
 
-        val sourceSrcRegex = Regex("""<source[^>]+src=["']([^"']+)["'](?:[^>]*type=["']([^"']+)["'])?""", RegexOption.IGNORE_CASE)
+        val sourceSrcRegex = Regex("""<source[^>]+(?:src|data-src)=["']([^"']+)["'](?:[^>]*type=["']([^"']+)["'])?""", RegexOption.IGNORE_CASE)
         sourceSrcRegex.findAll(html).forEach { match ->
             val src = match.groupValues[1]
             val mime = match.groupValues.getOrNull(2)
             addCandidate(src, if (mime?.contains("video") == true) "Video Stream" else "Media Stream")
         }
 
-        // 3. Magnet links
+        // 3. JSON-LD and inline script media links
+        val jsonLdContentUrlRegex = Regex(""""contentUrl"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+        jsonLdContentUrlRegex.findAll(html).forEach { match ->
+            val unescaped = match.groupValues[1].replace("\\/", "/").replace("\\u0026", "&")
+            addCandidate(unescaped, "Video Stream (JSON-LD)")
+        }
+
+        val inlineStreamRegex = Regex("""(?:video_url|videoUrl|stream_url|fileUrl|hls_url|m3u8_url)["']?\s*[:=]\s*["']([^"']+\.(?:mp4|m3u8|webm)[^"']*)["']""", RegexOption.IGNORE_CASE)
+        inlineStreamRegex.findAll(html).forEach { match ->
+            val unescaped = match.groupValues[1].replace("\\/", "/").replace("\\u0026", "&")
+            addCandidate(unescaped, "Embedded Stream")
+        }
+
+        // 4. Magnet links
         val magnetRegex = Regex("""href=["'](magnet:\?[^"']+)["']""", RegexOption.IGNORE_CASE)
         magnetRegex.findAll(html).forEach { match ->
             addCandidate(match.groupValues[1], "BitTorrent Magnet")
         }
 
-        // 4. Downloadable file links <a href="...">
+        // 5. Downloadable file links <a href="...">
         val hrefRegex = Regex("""<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>""", RegexOption.IGNORE_CASE)
         hrefRegex.findAll(html).forEach { match ->
             val href = match.groupValues[1].trim()
