@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Official and community-curated resolver extensions for OmniDownloader",
   "homepage": "https://github.com/sweenyxq-gif/omnidl-extensions",
-  "totalExtensions": 15,
+  "totalExtensions": 19,
   "extensions": [
     {
       "id": "https://omni.downloader/resolvers/1fichier:1Fichier Direct Resolver",
@@ -218,6 +218,96 @@
       ]
     },
     {
+      "id": "https://omni.downloader/resolvers/hblinks:HbLinks & Gate Bypasser",
+      "name": "HbLinks & Gate Bypasser",
+      "namespace": "https://omni.downloader/resolvers/hblinks",
+      "version": "1.0.0",
+      "category": "shortener",
+      "author": "OmniDownloader Community",
+      "description": "Bypasses intermediate shortlink gates (cryptoinsights, gadgetsweb, techyboy4u, hdstream4u) decoding ROT13+Base64 tokens to reveal destination downloads.",
+      "filename": "hblinks.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/hblinks.user.js",
+      "matches": [
+        "*://*.gadgetsweb.xyz/*",
+        "*://*.cryptoinsights.site/*",
+        "*://*.kiemtienmua911ca/*",
+        "*://*.techyboy4u.*/*",
+        "*://*.hdstream4u.*/*",
+        "*://*.hblinks.*/*"
+      ],
+      "includes": [],
+      "connects": [
+        "gadgetsweb.xyz",
+        "cryptoinsights.site",
+        "kiemtienmua911ca",
+        "techyboy4u.com",
+        "hdstream4u.com",
+        "*"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/hdhub4u:HDHub4u Post Resolver",
+      "name": "HDHub4u Post Resolver",
+      "namespace": "https://omni.downloader/resolvers/hdhub4u",
+      "version": "1.0.0",
+      "category": "video",
+      "author": "OmniDownloader Community",
+      "description": "Parses HDHub4u movie and TV series pages, extracting organized 4K, 1080p, 720p, 480p, and episode download streams.",
+      "filename": "hdhub4u.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/hdhub4u.user.js",
+      "matches": [
+        "*://*.hdhub4u.*/*",
+        "*://*.hdhub4u.cl/*",
+        "*://*.hdhub4u.in/*",
+        "*://*.hdhub4u.movie/*",
+        "*://*.hdhub4u.tv/*",
+        "*://*.hdhub4u.lat/*",
+        "*://*.hdhub4u.fans/*"
+      ],
+      "includes": [],
+      "connects": [
+        "hdhub4u.cl",
+        "hdhub4u.in",
+        "hdhub4u.movie",
+        "hdhub4u.tv",
+        "hdhub4u.lat",
+        "hdhub4u.fans",
+        "*"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/hubcloud:HubCloud Direct Resolver",
+      "name": "HubCloud Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/hubcloud",
+      "version": "1.0.0",
+      "category": "filehost",
+      "author": "OmniDownloader Community",
+      "description": "Resolves HubCloud and HubStream file locker gates (FSL, 10Gbps, Cloudflare R2, S3, PixelDrain) into direct downloadable streams.",
+      "filename": "hubcloud.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/hubcloud.user.js",
+      "matches": [
+        "*://*.hubcloud.club/*",
+        "*://*.hubcloud.ink/*",
+        "*://*.hubcloud.cx/*",
+        "*://*.hubcloud.one/*",
+        "*://*.hubcloud.lat/*",
+        "*://*.hubstream.dad/*",
+        "*://*.hubstream.me/*"
+      ],
+      "includes": [],
+      "connects": [
+        "hubcloud.club",
+        "hubcloud.ink",
+        "hubcloud.cx",
+        "hubcloud.one",
+        "hubcloud.lat",
+        "hubstream.dad",
+        "hubstream.me",
+        "pixeldrain.com",
+        "*"
+      ]
+    },
+    {
       "id": "https://omni.downloader/resolvers/huggingface:Hugging Face Model & Dataset Resolver",
       "name": "Hugging Face Model & Dataset Resolver",
       "namespace": "https://omni.downloader/resolvers/huggingface",
@@ -328,6 +418,35 @@
       "includes": [],
       "connects": [
         "sourceforge.net"
+      ]
+    },
+    {
+      "id": "https://omni.downloader/resolvers/streamtape:StreamTape Direct Resolver",
+      "name": "StreamTape Direct Resolver",
+      "namespace": "https://omni.downloader/resolvers/streamtape",
+      "version": "1.0.0",
+      "category": "video",
+      "author": "OmniDownloader Community",
+      "description": "Resolves StreamTape video streams directly into playable and downloadable MP4 media streams.",
+      "filename": "streamtape.user.js",
+      "scriptUrl": "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/userscripts/streamtape.user.js",
+      "matches": [
+        "*://*.streamtape.com/v/*",
+        "*://*.streamtape.com/e/*",
+        "*://*.streamta.pe/v/*",
+        "*://*.streamta.pe/e/*",
+        "*://*.streamtape.to/v/*",
+        "*://*.streamtape.to/e/*",
+        "*://*.streamtape.net/v/*",
+        "*://*.streamtape.net/e/*"
+      ],
+      "includes": [],
+      "connects": [
+        "streamtape.com",
+        "streamta.pe",
+        "streamtape.to",
+        "streamtape.net",
+        "*"
       ]
     },
     {
