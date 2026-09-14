@@ -15,6 +15,7 @@ import com.omnidownloader.data.userscript.ExtensionUpdateManager
 import com.omnidownloader.data.update.AppUpdate
 import com.omnidownloader.data.update.GitHubUpdateRepository
 import com.omnidownloader.data.update.UpdateCoordinator
+import com.omnidownloader.data.update.UpdateProgress
 import com.omnidownloader.domain.inspector.LinkInspection
 import com.omnidownloader.domain.model.*
 import com.omnidownloader.domain.repository.DownloadRepository
@@ -49,6 +50,7 @@ data class MainUiState(
     val torrentMetadata: TorrentMetadata? = null,
     val isTorrentInspecting: Boolean = false,
     val availableUpdate: AppUpdate? = null,
+    val updateProgress: UpdateProgress? = null,
     val isCheckingForUpdates: Boolean = false,
     val isCheckingExtensionUpdates: Boolean = false,
     val availableExtensionUpdates: List<ExtensionUpdateInfo> = emptyList(),
@@ -94,9 +96,15 @@ class MainViewModel @Inject constructor(
         repository.observeAll(),
         settingsRepository.settings,
         userscriptResolver.installedScripts,
+        updateCoordinator.progress,
         transient
-    ) { tasks, settings, scripts, local ->
-        local.copy(tasks = tasks, settings = settings, installedScripts = scripts.values.toList())
+    ) { tasks, settings, scripts, updateProg, local ->
+        local.copy(
+            tasks = tasks,
+            settings = settings,
+            installedScripts = scripts.values.toList(),
+            updateProgress = updateProg
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
     init {
@@ -502,9 +510,16 @@ class MainViewModel @Inject constructor(
     }
     fun downloadUpdate() {
         val update = transient.value.availableUpdate ?: return
-        runCatching { updateCoordinator.download(update) }
-            .onSuccess { transient.update { it.copy(message = "Update download started") } }
-            .onFailure { error -> transient.update { it.copy(message = error.message ?: "Could not download update") } }
+        updateCoordinator.download(update)
+    }
+
+    fun cancelUpdateDownload() {
+        updateCoordinator.cancel()
+    }
+
+    fun installDownloadedUpdate() {
+        val apkFile = state.value.updateProgress?.readyToInstallApk ?: return
+        updateCoordinator.installApk(apkFile)
     }
 
     private fun category(mime: String?, name: String): DownloadCategory = when {

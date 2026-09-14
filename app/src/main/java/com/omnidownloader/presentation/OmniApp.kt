@@ -2357,15 +2357,101 @@ private fun SettingsScreen(state: MainUiState, vm: MainViewModel) {
             }
         }
         state.availableUpdate?.let { update ->
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(update.title, fontWeight = FontWeight.Bold)
-                    Text("Version ${update.version}${if (update.size > 0) " • ${formatBytes(update.size)}" else ""}", style = MaterialTheme.typography.bodySmall)
-                    if (update.notes.isNotBlank()) Text(update.notes, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    Button(vm::downloadUpdate, enabled = update.sha256 != null, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.SystemUpdate, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (update.sha256 != null) "Download verified update" else "Digest unavailable")
+            val progress = state.updateProgress
+            ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(update.title, fontWeight = FontWeight.Bold)
+                            Text("Version ${update.version}${if (update.size > 0) " • ${formatBytes(update.size)}" else ""}", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    if (update.notes.isNotBlank() && progress == null) {
+                        Text(update.notes, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    }
+
+                    if (progress != null) {
+                        if (progress.error != null) {
+                            Text(progress.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            Button(
+                                onClick = vm::downloadUpdate,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Refresh, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Retry download")
+                            }
+                        } else if (progress.isCompleted && progress.readyToInstallApk != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF16803A), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Download verified (SHA-256)", fontWeight = FontWeight.SemiBold, color = Color(0xFF16803A), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Button(
+                                onClick = vm::installDownloadedUpdate,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16803A)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.SystemUpdate, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Tap to install update now")
+                            }
+                        } else {
+                            // In progress
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (progress.totalBytes > 0) {
+                                    LinearProgressIndicator(
+                                        progress = { progress.progressFraction },
+                                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                                    )
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(
+                                        "${progress.percentage}% (${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val metrics = buildList {
+                                        if (progress.speedBytesPerSecond > 0) add("↓ ${formatBytes(progress.speedBytesPerSecond)}/s")
+                                        progress.etaSeconds?.let { if (it > 0) add("ETA ${formatDuration(it)}") }
+                                    }.joinToString(" • ")
+                                    Text(metrics, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                }
+                                OutlinedButton(
+                                    onClick = vm::cancelUpdateDownload,
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("Cancel")
+                                }
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = vm::downloadUpdate,
+                            enabled = update.sha256 != null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Download, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (update.sha256 != null) "Download & install update" else "Digest unavailable")
+                        }
                     }
                 }
             }
