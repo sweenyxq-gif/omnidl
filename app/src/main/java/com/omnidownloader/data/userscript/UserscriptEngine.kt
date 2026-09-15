@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.net.URI
+import java.util.Collections
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,9 +37,9 @@ class AndroidUserscriptEngine @Inject constructor(
         targetUrl: String
     ): UserscriptExecutionResult = withContext(Dispatchers.Main) {
         val startTime = System.currentTimeMillis()
-        val logs = mutableListOf<String>()
-        val networkCalls = mutableListOf<ScriptNetworkLog>()
-        val resolvedItems = mutableListOf<ResolvedItem>()
+        val logs = Collections.synchronizedList(mutableListOf<String>())
+        val networkCalls = Collections.synchronizedList(mutableListOf<ScriptNetworkLog>())
+        val resolvedItems = Collections.synchronizedList(mutableListOf<ResolvedItem>())
         val completionDeferred = CompletableDeferred<Unit>()
         val addLog: (String) -> Unit = { message ->
             if (logs.size < 200) logs.add(message.take(2_000))
@@ -179,6 +180,7 @@ class AndroidUserscriptEngine @Inject constructor(
                                 put("statusText", res.statusText)
                                 put("headers", JSONObject(res.headers))
                                 put("body", res.bodyText)
+                                put("finalUrl", res.finalUrl)
                             }.toString()
                         } catch (e: Exception) {
                             JSONObject().apply {
@@ -216,6 +218,8 @@ class AndroidUserscriptEngine @Inject constructor(
                                 status: resp.status,
                                 statusText: resp.statusText,
                                 headers: resp.headers,
+                                ok: resp.status >= 200 && resp.status < 300,
+                                url: resp.finalUrl,
                                 text: async function() { return resp.body; },
                                 json: async function() { return JSON.parse(resp.body); }
                             };
@@ -303,13 +307,16 @@ class AndroidUserscriptEngine @Inject constructor(
             withTimeoutOrNull(15_000) {
                 completionDeferred.await()
             }
+            // A resolver may emit several links in one run. Give queued JS callbacks a short
+            // settling window instead of destroying the WebView after the first result.
+            if (resolvedItems.isNotEmpty()) delay(300)
 
             val elapsed = System.currentTimeMillis() - startTime
             UserscriptExecutionResult(
                 success = resolvedItems.isNotEmpty(),
-                resolvedItems = resolvedItems,
-                logs = logs,
-                networkCalls = networkCalls,
+                resolvedItems = resolvedItems.toList(),
+                logs = logs.toList(),
+                networkCalls = networkCalls.toList(),
                 executionTimeMs = elapsed,
                 error = if (resolvedItems.isEmpty()) "Script completed without calling omni.resolve()" else null
             )
@@ -318,8 +325,8 @@ class AndroidUserscriptEngine @Inject constructor(
             UserscriptExecutionResult(
                 success = false,
                 resolvedItems = emptyList(),
-                logs = logs,
-                networkCalls = networkCalls,
+                logs = logs.toList(),
+                networkCalls = networkCalls.toList(),
                 executionTimeMs = elapsed,
                 error = e.message ?: "Execution failed"
             )

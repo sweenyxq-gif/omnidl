@@ -10,7 +10,6 @@ import com.omnidownloader.data.resolver.ResolverManager
 import com.omnidownloader.data.userscript.UserscriptEngine
 import com.omnidownloader.data.userscript.UserscriptMetadataParser
 import com.omnidownloader.data.userscript.UserscriptResolver
-import com.omnidownloader.data.userscript.ExtensionCatalog
 import com.omnidownloader.data.userscript.ExtensionUpdateManager
 import com.omnidownloader.data.update.AppUpdate
 import com.omnidownloader.data.update.GitHubUpdateRepository
@@ -89,7 +88,7 @@ class MainViewModel @Inject constructor(
     private val updateCoordinator: UpdateCoordinator,
     private val extensionUpdateManager: ExtensionUpdateManager,
 ) : ViewModel() {
-    val extensionCatalog: List<UserscriptMetadata> = ExtensionCatalog.scripts
+    val extensionCatalog: List<UserscriptMetadata> = extensionUpdateManager.loadBundledCatalog()
     private val transient = MutableStateFlow(MainUiState())
     private var torrentMetadataJob: kotlinx.coroutines.Job? = null
     val state: StateFlow<MainUiState> = combine(
@@ -163,8 +162,8 @@ class MainViewModel @Inject constructor(
             return
         }
         val meta = UserscriptMetadataParser.parse(scriptCode)
-        if (meta == null) {
-            transient.update { it.copy(message = "Failed to parse userscript header (missing // ==UserScript== block)") }
+        if (meta == null || !userscriptResolver.isInstallable(meta)) {
+            transient.update { it.copy(message = "Script is not a compatible Omni resolver (API 1 metadata and supported permissions required)") }
             return
         }
         transient.update { it.copy(isDebugging = true, debugResult = null, message = null) }
@@ -186,7 +185,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun parseScriptForReview(scriptCode: String): UserscriptMetadata? =
-        UserscriptMetadataParser.parse(scriptCode)
+        UserscriptMetadataParser.parse(scriptCode)?.takeIf(userscriptResolver::isInstallable)
 
     fun uninstallScript(id: String) {
         val removed = userscriptResolver.unregisterScript(id)
@@ -241,14 +240,17 @@ class MainViewModel @Inject constructor(
 
     fun applyAllExtensionUpdates() {
         val updates = transient.value.availableExtensionUpdates
-        var count = 0
-        updates.forEach { u ->
-            if (extensionUpdateManager.applyUpdate(u)) count++
-        }
+        val applied = updates.filter { extensionUpdateManager.applyUpdate(it) }
         transient.update {
             it.copy(
-                availableExtensionUpdates = emptyList(),
-                message = "Updated $count extension(s)"
+                availableExtensionUpdates = it.availableExtensionUpdates.filterNot { update ->
+                    applied.any { success -> success.scriptId == update.scriptId }
+                },
+                message = if (applied.size == updates.size) {
+                    "Updated ${applied.size} extension(s)"
+                } else {
+                    "Updated ${applied.size} of ${updates.size}; review the remaining updates"
+                }
             )
         }
     }

@@ -24,7 +24,12 @@ class UserscriptStorage @Inject constructor(
                     val item = array.getJSONObject(index)
                     val raw = item.getString("rawScript")
                     UserscriptMetadataParser.parse(raw)?.let {
-                        add(it.copy(enabled = item.optBoolean("enabled", true)))
+                        add(
+                            it.copy(
+                                enabled = item.optBoolean("enabled", true),
+                                builtIn = item.optBoolean("builtIn", false)
+                            )
+                        )
                     }
                 }
             }
@@ -33,10 +38,11 @@ class UserscriptStorage @Inject constructor(
 
     fun saveScripts(scripts: Collection<UserscriptMetadata>) {
         val array = JSONArray()
-        scripts.filterNot { it.builtIn }.forEach { script ->
+        scripts.forEach { script ->
             array.put(JSONObject().apply {
                 put("rawScript", script.rawScript)
                 put("enabled", script.enabled)
+                put("builtIn", script.builtIn)
             })
         }
         registry.edit().putString("scripts", array.toString()).apply()

@@ -52,7 +52,9 @@ object UserscriptMetadataParser {
         val grants = tags["grant"].orEmpty().toSet()
         val connects = tags["connect"].orEmpty()
 
-        val isOmniResolver = tags["omni-resolver"]?.firstOrNull()?.equals("false", ignoreCase = true) != true
+        // A regular browser userscript is not automatically safe or compatible with OmniDL's
+        // resolver runtime. Scripts must opt in explicitly.
+        val isOmniResolver = tags["omni-resolver"]?.firstOrNull()?.equals("true", ignoreCase = true) == true
         val omniApiVersion = tags["omni-api"]?.firstOrNull()?.toIntOrNull() ?: 1
         val category = tags["omni-category"]?.firstOrNull()
         val updateUrl = tags["updateurl"]?.firstOrNull()

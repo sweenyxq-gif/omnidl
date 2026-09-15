@@ -67,6 +67,10 @@ private enum class DownloadTab(val label: String) {
     FAILED("Failed")
 }
 
+private enum class ExtensionFilter(val label: String) {
+    ALL("All"), ENABLED("Enabled"), DISABLED("Disabled"), UPDATES("Updates")
+}
+
 @Composable
 fun OmniApp(
     initialUrl: String,
@@ -1431,6 +1435,8 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
     var extensionTab by rememberSaveable { mutableIntStateOf(0) }
     var debugUrl by rememberSaveable { mutableStateOf("") }
     var pendingInstall by remember { mutableStateOf<UserscriptMetadata?>(null) }
+    var extensionSearch by rememberSaveable { mutableStateOf("") }
+    var extensionFilter by rememberSaveable { mutableStateOf(ExtensionFilter.ALL) }
 
     LaunchedEffect(state.pendingUrlInstall) {
         state.pendingUrlInstall?.let {
@@ -1494,6 +1500,20 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
 
         when (extensionTab) {
         0 -> {
+        val enabledCount = state.installedScripts.count { it.enabled }
+        val bundledCount = state.installedScripts.count { it.builtIn }
+        ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ExtensionMetric("Installed", state.installedScripts.size.toString())
+                ExtensionMetric("Enabled", enabledCount.toString())
+                ExtensionMetric("Bundled", bundledCount.toString())
+                ExtensionMetric("Updates", state.availableExtensionUpdates.size.toString())
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(onClick = { scriptPicker.launch(arrayOf("text/javascript", "text/plain", "application/javascript")) }, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Default.FileOpen, null)
@@ -1553,7 +1573,28 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
             }
         }
 
-        Text("Installed Resolvers (${state.installedScripts.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        OutlinedTextField(
+            value = extensionSearch,
+            onValueChange = { extensionSearch = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = if (extensionSearch.isNotBlank()) {
+                { IconButton(onClick = { extensionSearch = "" }) { Icon(Icons.Default.Close, "Clear search") } }
+            } else null,
+            placeholder = { Text("Search installed extensions") }
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(ExtensionFilter.entries) { filter ->
+                FilterChip(
+                    selected = extensionFilter == filter,
+                    onClick = { extensionFilter = filter },
+                    label = { Text(filter.label) }
+                )
+            }
+        }
+
+        Text("Installed resolvers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
         ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1575,13 +1616,31 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
             }
         }
 
-        state.installedScripts.sortedWith(compareByDescending<UserscriptMetadata> { it.builtIn }.thenBy { it.name }).forEach { script ->
+        val visibleScripts = state.installedScripts.asSequence()
+            .filter { script ->
+                extensionSearch.isBlank() || listOfNotNull(script.name, script.description, script.category, script.author)
+                    .any { it.contains(extensionSearch.trim(), ignoreCase = true) }
+            }
+            .filter { script ->
+                when (extensionFilter) {
+                    ExtensionFilter.ALL -> true
+                    ExtensionFilter.ENABLED -> script.enabled
+                    ExtensionFilter.DISABLED -> !script.enabled
+                    ExtensionFilter.UPDATES -> state.availableExtensionUpdates.any { it.scriptId == script.id }
+                }
+            }
+            .sortedWith(compareByDescending<UserscriptMetadata> { it.builtIn }.thenBy { it.name })
+            .toList()
+        visibleScripts.forEach { script ->
             val update = state.availableExtensionUpdates.firstOrNull { it.scriptId == script.id }
             UserscriptCard(script, update, vm)
         }
 
-        if (state.installedScripts.isEmpty()) {
-            Text("No userscript resolvers installed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (visibleScripts.isEmpty()) {
+            Text(
+                if (state.installedScripts.isEmpty()) "No userscript resolvers installed." else "No extensions match this search and filter.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         }
         1 -> {
@@ -1791,6 +1850,7 @@ private fun ExtensionsScreen(state: MainUiState, vm: MainViewModel) {
 @Composable
 private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateInfo?, vm: MainViewModel) {
     var confirmRemove by rememberSaveable(script.id) { mutableStateOf(false) }
+    var expanded by rememberSaveable(script.id) { mutableStateOf(false) }
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1809,6 +1869,27 @@ private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateIn
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                Spacer(Modifier.width(4.dp))
+                Text(if (expanded) "Hide access details" else "View access details")
+            }
+            if (expanded) {
+                Surface(
+                    Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Runs on", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
+                        Text((script.matches + script.includes).joinToString("\n"), style = MaterialTheme.typography.bodySmall)
+                        Text("Network access", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
+                        Text(script.connects.joinToString("\n").ifBlank { "Matched page hosts only" }, style = MaterialTheme.typography.bodySmall)
+                        Text("Resolver API", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
+                        Text("Omni API ${script.omniApiVersion} • ${script.grants.joinToString().ifBlank { "No extra grants" }}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
 
             // Show update badge and button if an update is available
             update?.let { up ->
@@ -1854,6 +1935,14 @@ private fun UserscriptCard(script: UserscriptMetadata, update: ExtensionUpdateIn
         confirmButton = { TextButton({ vm.uninstallScript(script.id); confirmRemove = false }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Remove") } },
         dismissButton = { TextButton({ confirmRemove = false }) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun ExtensionMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

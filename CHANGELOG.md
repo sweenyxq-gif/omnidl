@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-09-15
+
+- Reworked the extension lifecycle so packaged resolvers remain current across app upgrades while preserving enable/disable choices.
+- Require explicit Omni Resolver API compatibility before a script can be installed, tested, or activated.
+- Excluded the incompatible browser-only video userscript from the active resolver catalog.
+- Made extension updates identity-safe and preserve enabled and bundled state.
+- Isolated resolver failures so one broken extension cannot prevent other matching extensions from returning links.
+- Added a short result-settling window so multi-file resolvers retain every emitted link.
+- Restricted remote extension installation to HTTPS and capped fetched scripts and catalogs at 1 MB.
+- Added installed/enabled/bundled/update health counts, search, status filters, and expandable permission details to the Extensions UI.
+- Added regression coverage for all 18 bundled Omni resolvers, incompatible scripts, and safe extension replacement.
+
 ## 0.5.0 - 2026-09-14
 
 - Rebuilt OmniDL around a compact graphite-and-cyan transfer-manager design with a reusable Compose component system.

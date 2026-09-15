@@ -20,14 +20,15 @@ class ExtensionUpdateManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     companion object {
+        const val MAX_REMOTE_FILE_BYTES: Long = 1_000_000
         const val DEFAULT_REPOSITORY_URL =
             "https://raw.githubusercontent.com/sweenyxq-gif/omnidl-extensions/main/extensions.json"
     }
 
     suspend fun fetchScriptFromUrl(url: String): String = withContext(Dispatchers.IO) {
         val trimmed = url.trim()
-        require(trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) {
-            "Only HTTP and HTTPS URLs are supported"
+        require(trimmed.startsWith("https://", true)) {
+            "Only secure HTTPS extension URLs are supported"
         }
         val normalized = normalizeUrl(trimmed)
         val urlsToTry = mutableListOf(normalized)
@@ -52,7 +53,20 @@ class ExtensionUpdateManager @Inject constructor(
                     .build()
                 client.newCall(req).execute().use { response ->
                     if (response.isSuccessful) {
-                        val bodyText = response.body?.string().orEmpty()
+                        val body = response.body
+                        if (body != null && body.contentLength() > MAX_REMOTE_FILE_BYTES) {
+                            throw java.io.IOException("Remote extension is larger than 1 MB")
+                        }
+                        val source = body?.source()
+                        val buffer = okio.Buffer()
+                        var total = 0L
+                        while (source != null && total <= MAX_REMOTE_FILE_BYTES) {
+                            val read = source.read(buffer, minOf(8_192L, MAX_REMOTE_FILE_BYTES + 1 - total))
+                            if (read == -1L) break
+                            total += read
+                        }
+                        if (total > MAX_REMOTE_FILE_BYTES) throw java.io.IOException("Remote extension is larger than 1 MB")
+                        val bodyText = buffer.readUtf8()
                         if (bodyText.isNotBlank()) {
                             return@withContext bodyText
                         }
@@ -87,6 +101,7 @@ class ExtensionUpdateManager @Inject constructor(
         try {
             val remoteCode = fetchScriptFromUrl(targetUrl)
             val remoteMeta = UserscriptMetadataParser.parse(remoteCode) ?: return@withContext null
+            if (remoteMeta.id != installed.id || !resolver.isInstallable(remoteMeta)) return@withContext null
             if (isNewerVersion(remoteMeta.version, installed.version)) {
                 val newConnects = remoteMeta.connects - installed.connects.toSet()
                 val newGrants = remoteMeta.grants - installed.grants
@@ -136,7 +151,7 @@ class ExtensionUpdateManager @Inject constructor(
                             if (isNewerVersion(entry.version, matchingLocal.version)) {
                                 val scriptCode = fetchScriptFromUrl(entry.scriptUrl)
                                 val meta = UserscriptMetadataParser.parse(scriptCode)
-                                if (meta != null) {
+                                if (meta != null && meta.id == matchingLocal.id && resolver.isInstallable(meta)) {
                                     val newConnects = meta.connects - matchingLocal.connects.toSet()
                                     val newGrants = meta.grants - matchingLocal.grants
                                     val newPermissions = buildList {
@@ -148,7 +163,7 @@ class ExtensionUpdateManager @Inject constructor(
                                             scriptId = matchingLocal.id,
                                             name = meta.name,
                                             currentVersion = matchingLocal.version,
-                                            newVersion = entry.version,
+                                            newVersion = meta.version,
                                             updateSourceUrl = entry.scriptUrl,
                                             newScriptCode = scriptCode,
                                             newMetadata = meta,
@@ -169,7 +184,7 @@ class ExtensionUpdateManager @Inject constructor(
     }
 
     fun applyUpdate(update: ExtensionUpdateInfo): Boolean {
-        val registered = resolver.registerScript(update.newScriptCode)
+        val registered = resolver.replaceScript(update.scriptId, update.newScriptCode)
         return registered != null
     }
 
@@ -305,6 +320,8 @@ class ExtensionUpdateManager @Inject constructor(
             } else ""
 
             val parsedBundled = if (bundledCode.isNotBlank()) UserscriptMetadataParser.parse(bundledCode) else null
+            // Do not advertise ordinary browser userscripts as resolver extensions.
+            if (bundledCode.isNotBlank() && parsedBundled?.isOmniResolver != true) continue
             val finalId = parsedBundled?.id ?: UserscriptMetadataParser.buildScriptId(namespace, name)
 
             list.add(

@@ -25,7 +25,9 @@ class UserscriptResolver @Inject constructor(
     val installedScripts: StateFlow<Map<String, UserscriptMetadata>> = _installedScripts.asStateFlow()
 
     init {
-        val loaded = storage.loadScripts().associateBy { it.id }.toMutableMap()
+        // Also migrates away entries saved by older builds that were ordinary browser
+        // userscripts or targeted an unsupported Omni API version.
+        val loaded = storage.loadScripts().filter(::isInstallable).associateBy { it.id }.toMutableMap()
 
         // Pre-load bundled userscripts from assets so all curated resolvers work out of the box
         if (context != null) {
@@ -36,8 +38,15 @@ class UserscriptResolver @Inject constructor(
                         try {
                             val scriptText = context.assets.open("userscripts/$file").bufferedReader().use { it.readText() }
                             UserscriptMetadataParser.parse(scriptText)?.let { parsed ->
-                                if (!loaded.containsKey(parsed.id)) {
-                                    loaded[parsed.id] = parsed
+                                if (isInstallable(parsed)) {
+                                    val packaged = parsed.copy(builtIn = true)
+                                    val saved = loaded[packaged.id]
+                                    loaded[packaged.id] = when {
+                                        saved == null -> packaged
+                                        compareVersions(saved.version, packaged.version) > 0 ->
+                                            saved.copy(builtIn = true)
+                                        else -> packaged.copy(enabled = saved.enabled)
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
@@ -50,51 +59,8 @@ class UserscriptResolver @Inject constructor(
             }
         }
 
-        // Pre-load a sample built-in resolver: GitHub Release direct artifact resolver
-        val sampleGithubResolver = """
-            // ==UserScript==
-            // @name         GitHub Release Direct Resolver
-            // @namespace    https://omni.downloader/resolvers/github
-            // @version      1.0.0
-            // @description  Resolves direct download links for GitHub releases
-            // @match        *://github.com/*/*/releases/tag/*
-            // @grant        GM_xmlhttpRequest
-            // @grant        GM_log
-            // @connect      github.com
-            // @connect      *.githubusercontent.com
-            // @omni-resolver true
-            // @omni-api     1
-            // @omni-category archives
-            // ==/UserScript==
-
-            omni.log("GitHub release resolver matched: " + targetUrl);
-            var response = await omni.fetch(targetUrl);
-            var text = await response.text();
-
-            // Look for release assets in HTML
-            var assetRegex = /href=["']([^"']+\/releases\/download\/[^"']+)["']/g;
-            var match;
-            var found = false;
-            while ((match = assetRegex.exec(text)) !== null) {
-                var assetUrl = "https://github.com" + match[1];
-                var filename = assetUrl.substring(assetUrl.lastIndexOf('/') + 1);
-                omni.log("Discovered GitHub release asset: " + filename);
-                omni.resolve({
-                    url: assetUrl,
-                    label: "GitHub Release Asset (" + filename + ")",
-                    filename: filename
-                });
-                found = true;
-            }
-            if (!found) {
-                omni.log("No downloadable assets found in release tag.");
-            }
-        """.trimIndent()
-        UserscriptMetadataParser.parse(sampleGithubResolver)?.copy(builtIn = true)?.let { builtIn ->
-            loaded[builtIn.id] = builtIn
-        }
-
         _installedScripts.value = loaded
+        persist()
     }
 
     fun registerScript(rawScript: String): UserscriptMetadata? {
@@ -104,6 +70,18 @@ class UserscriptResolver @Inject constructor(
         _installedScripts.value = _installedScripts.value + (meta.id to meta)
         persist()
         return meta
+    }
+
+    /** Replaces exactly one installed extension while preserving its source and enabled state. */
+    fun replaceScript(expectedId: String, rawScript: String): UserscriptMetadata? {
+        if (rawScript.length > 1_000_000) return null
+        val current = _installedScripts.value[expectedId] ?: return null
+        val parsed = UserscriptMetadataParser.parse(rawScript) ?: return null
+        if (parsed.id != expectedId || !isInstallable(parsed)) return null
+        val replacement = parsed.copy(enabled = current.enabled, builtIn = current.builtIn)
+        _installedScripts.value = _installedScripts.value + (expectedId to replacement)
+        persist()
+        return replacement
     }
 
     fun unregisterScript(id: String): Boolean {
@@ -132,12 +110,22 @@ class UserscriptResolver @Inject constructor(
     override suspend fun resolve(request: ResolveRequest): ResolveResult {
         val matchedScripts = _installedScripts.value.values.filter { meta ->
             meta.enabled && UserscriptMetadataParser.matchesUrl(meta, request.url)
-        }
+        }.sortedBy { script -> script.matches.any { it == "*://*/*" || it == "<all_urls>" } }
         if (matchedScripts.isEmpty()) return ResolveResult.Unsupported(request.url)
 
+        val failures = mutableListOf<String>()
         val results = matchedScripts.flatMap { script ->
-            val execution = engine.execute(script, request.url)
-            if (execution.success) execution.resolvedItems else emptyList()
+            runCatching { engine.execute(script, request.url) }
+                .fold(
+                    onSuccess = { execution ->
+                        if (!execution.success) failures += "${script.name}: ${execution.error ?: "no results"}"
+                        execution.resolvedItems
+                    },
+                    onFailure = { error ->
+                        failures += "${script.name}: ${error.message ?: "execution failed"}"
+                        emptyList()
+                    }
+                )
         }.distinctBy { it.url }
         return if (results.isNotEmpty()) {
             ResolveResult.Success(
@@ -147,12 +135,14 @@ class UserscriptResolver @Inject constructor(
         } else {
             ResolveResult.Failed(
                 originalUrl = request.url,
-                reason = "Matching scripts did not produce any resolved items"
+                reason = failures.take(3).joinToString("; ").ifBlank {
+                    "Matching scripts did not produce any resolved items"
+                }
             )
         }
     }
 
-    private fun isInstallable(meta: UserscriptMetadata): Boolean {
+    fun isInstallable(meta: UserscriptMetadata): Boolean {
         val supportedGrants = setOf(
             "GM_xmlhttpRequest",
             "GM_log",
@@ -174,8 +164,20 @@ class UserscriptResolver @Inject constructor(
             "none"
         )
         return meta.id.isNotBlank() &&
+            meta.isOmniResolver &&
+            meta.omniApiVersion == 1 &&
             (meta.matches.isNotEmpty() || meta.includes.isNotEmpty()) &&
             meta.grants.all { it in supportedGrants }
+    }
+
+    private fun compareVersions(left: String, right: String): Int {
+        val leftParts = left.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+        val rightParts = right.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+        repeat(maxOf(leftParts.size, rightParts.size)) { index ->
+            val comparison = leftParts.getOrElse(index) { 0 }.compareTo(rightParts.getOrElse(index) { 0 })
+            if (comparison != 0) return comparison
+        }
+        return 0
     }
 
     private fun persist() = storage.saveScripts(_installedScripts.value.values)

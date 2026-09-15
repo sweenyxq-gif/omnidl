@@ -14,6 +14,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,6 +60,8 @@ class UserscriptManagementTest {
         assertNull(resolver.registerScript(validScript().replace("// @grant GM_log", "// @grant GM_unsupportedDangerousGrant")))
         assertNull(resolver.registerScript(validScript().replace("// @match https://downloads.example.test/*", "")))
         assertNull(resolver.registerScript(validScript().replace("// ==/UserScript==", "")))
+        assertNull(resolver.registerScript(validScript().replace("// @omni-resolver true", "")))
+        assertNull(resolver.registerScript(validScript().replace("// @omni-api 1", "// @omni-api 99")))
     }
 
     @Test
@@ -89,21 +92,41 @@ class UserscriptManagementTest {
     }
 
     @Test
-    fun allInOneVideoDownloaderParsesAndInstallsSuccessfully() {
+    fun browserOnlyUserscriptIsNotActivatedAsAResolver() {
         val resolver = UserscriptResolver(engine, UserscriptStorage(context))
-        val scriptFile = java.io.File("../userscripts/all-in-one-video-downloader.user.js")
-        if (scriptFile.exists()) {
-            val scriptContent = scriptFile.readText()
-            val parsed = UserscriptMetadataParser.parse(scriptContent)
-            assertNotNull(parsed)
-            assertTrue(parsed!!.includes.isNotEmpty())
-            assertTrue(parsed.grants.contains("GM_download"))
-            val installed = resolver.registerScript(scriptContent)
-            assertNotNull(installed)
-            assertTrue(resolver.canHandle("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
-            assertTrue(resolver.canHandle("https://www.instagram.com/p/C_abc/"))
-            assertTrue(resolver.canHandle("https://x.com/user/status/123"))
-        }
+        val scriptContent = context.assets.open("userscripts/all-in-one-video-downloader.user.js")
+            .bufferedReader().use { it.readText() }
+        val parsed = UserscriptMetadataParser.parse(scriptContent)
+        assertNotNull(parsed)
+        assertFalse(parsed!!.isOmniResolver)
+        assertNull(resolver.registerScript(scriptContent))
+    }
+
+    @Test
+    fun bundledCatalogOnlyActivatesOmniCompatibleResolvers() {
+        val resolver = UserscriptResolver(engine, UserscriptStorage(context), context)
+        val bundled = resolver.installedScripts.value.values.filter { it.builtIn }
+
+        assertEquals(18, bundled.size)
+        assertTrue(bundled.all { it.isOmniResolver && it.omniApiVersion == 1 })
+        assertFalse(bundled.any { it.name.startsWith("All-in-One Video Downloader") })
+    }
+
+    @Test
+    fun updateMustKeepIdentityAndPreservesEnabledState() {
+        val resolver = UserscriptResolver(engine, UserscriptStorage(context))
+        val installed = resolver.registerScript(validScript())!!
+        resolver.setEnabled(installed.id, false)
+
+        val updated = resolver.replaceScript(installed.id, validScript().replace("1.2.3", "1.3.0"))
+        assertEquals("1.3.0", updated?.version)
+        assertFalse(updated!!.enabled)
+        assertNull(
+            resolver.replaceScript(
+                installed.id,
+                validScript().replace("// @name Test Resolver", "// @name Different Resolver")
+            )
+        )
     }
 
     private fun validScript() = """
