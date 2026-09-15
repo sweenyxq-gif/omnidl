@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.2 - 2026-09-15
+
+- Added a repeatable desktop contract harness covering all 18 compatible resolver extensions.
+- Replaced obsolete GitHub and GitLab HTML scraping with their official release APIs after live-link testing exposed both failures.
+- Verified live resolution against public Civitai, GitHub, GitLab, Hugging Face, Internet Archive, SourceForge, and HTML5 media links.
+- Added the complete extension contract suite to the signed GitHub release workflow.
+
 ## 0.5.1 - 2026-09-15
 
 - Reworked the extension lifecycle so packaged resolvers remain current across app upgrades while preserving enable/disable choices.
